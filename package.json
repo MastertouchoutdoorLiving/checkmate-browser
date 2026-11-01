@@ -1,0 +1,38 @@
+{
+  "name": "multispace-browser",
+  "productName": "MultiSpace Browser",
+  "version": "0.1.0",
+  "description": "A Chromium-based browser with multiple isolated accounts (spaces), pinned web apps, and Chrome extension support.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "electron-chrome-extensions": "4.10.0",
+    "electron-chrome-web-store": "0.13.0"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.multispace.browser",
+    "productName": "MultiSpace Browser",
+    "files": [
+      "src/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}

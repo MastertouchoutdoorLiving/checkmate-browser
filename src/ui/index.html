@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src * data: crx:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>MultiSpace Browser</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="shell">
+      <nav id="rail" aria-label="Spaces">
+        <div id="spaces"></div>
+        <button id="add-space" class="rail-btn" title="Add a space (new account)">+</button>
+        <div class="rail-spacer"></div>
+        <button id="open-extensions" class="rail-btn small" title="Extensions">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.7 2.7 0 0 1 0 5.4H2V20a2 2 0 0 0 2 2h3.8v-1.5a2.7 2.7 0 0 1 5.4 0V22H17a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+        </button>
+      </nav>
+
+      <aside id="apps-panel">
+        <header id="space-header">
+          <div id="space-name"></div>
+          <button id="edit-space" class="icon-btn" title="Space settings">⋯</button>
+        </header>
+        <div class="section-label">Apps</div>
+        <ul id="apps"></ul>
+        <button id="add-app" class="add-row">+ Add app</button>
+      </aside>
+
+      <main id="main">
+        <div id="tabstrip">
+          <div id="tabs"></div>
+          <button id="new-tab" class="icon-btn" title="New tab (Ctrl/Cmd+T)">+</button>
+        </div>
+        <div id="toolbar">
+          <button id="toggle-apps" class="icon-btn" title="Toggle apps panel (Ctrl/Cmd+B)">☰</button>
+          <button id="back" class="icon-btn" title="Back">←</button>
+          <button id="forward" class="icon-btn" title="Forward">→</button>
+          <button id="reload" class="icon-btn" title="Reload">⟳</button>
+          <form id="address-form"><input id="address" spellcheck="false" placeholder="Search Google or type a URL" /></form>
+          <div id="actions-slot"></div>
+        </div>
+        <div id="content">
+          <div id="empty">
+            <h2>Nothing open in this space</h2>
+            <p>Pick an app on the left, or open a new tab.</p>
+          </div>
+        </div>
+      </main>
+    </div>
+    <div id="modal-root"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
