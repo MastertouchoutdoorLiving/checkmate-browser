@@ -21,6 +21,7 @@ const {
   updateExtensions,
 } = require('electron-chrome-web-store')
 const { Store, CATALOG, COLORS } = require('./store')
+const { PasswordVault } = require('./passwords')
 
 app.setName('MultiSpace Browser')
 // Hide Chromium's internal log noise (STUN lookups, Bluetooth/passkey probes) from the Terminal.
@@ -28,6 +29,7 @@ app.setName('MultiSpace Browser')
 app.commandLine.appendSwitch('log-level', '3')
 
 let store
+let vault
 let win
 let contentBounds = { x: 0, y: 0, width: 0, height: 0 }
 let overlayOpen = false // true while a modal is open in the UI, so the page view is hidden
@@ -435,6 +437,63 @@ function updateBadgeCount() {
 // ---------------------------------------------------------------- IPC from the UI
 
 function registerIpc() {
+  // ---- passwords
+  // Only tabs (not the browser UI or other windows) can ask for logins, and only for the
+  // frame's own real URL, which comes from the main process rather than from the page.
+  ipcMain.handle('pw:lookup', (e) => {
+    const tab = findTabByWebContents(e.sender) || (e.sender.hostWebContents && findTabByWebContents(e.sender.hostWebContents))
+    const isPopup = !tab && BrowserWindow.fromWebContents(e.sender)?.getParentWindow() === win
+    if (!tab && !isPopup) return []
+    try {
+      return vault.forUrl(e.senderFrame ? e.senderFrame.url : e.sender.getURL())
+    } catch {
+      return []
+    }
+  })
+  ipcMain.on('pw:offer-save', async (e, { username, password }) => {
+    const url = e.senderFrame ? e.senderFrame.url : e.sender.getURL()
+    if (!password || !/^https:/.test(url) || !vault.available()) return
+    let known
+    try {
+      known = vault.forUrl(url)
+    } catch {
+      return
+    }
+    if (known.some((l) => l.username === username && l.password === password)) return
+    const host = new URL(url).hostname.replace(/^www\./, '')
+    if ((store.state.settings.neverSave || []).includes(host)) return
+    const update = known.some((l) => l.username === username)
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: [update ? 'Update password' : 'Save password', 'Not now', 'Never for this site'],
+      defaultId: 0,
+      cancelId: 1,
+      message: `${update ? 'Update' : 'Save'} password for ${host}?`,
+      detail: username ? `Username: ${username}` : 'No username detected.',
+    })
+    if (response === 0) {
+      vault.add({ url, username, password })
+      vault.save()
+    } else if (response === 2) {
+      store.state.settings.neverSave = [...(store.state.settings.neverSave || []), host]
+      store.save()
+    }
+  })
+  ipcMain.handle('pw:list', () => {
+    try {
+      return { ok: true, items: vault.list(), secure: vault.available() }
+    } catch (err) {
+      return { ok: false, error: err.message }
+    }
+  })
+  ipcMain.handle('pw:remove', (_e, id) => vault.remove(id))
+  ipcMain.handle('pw:add', (_e, entry) => {
+    if (!vault.add(entry)) return false
+    vault.save()
+    return true
+  })
+  ipcMain.handle('pw:import', importPasswordsDialog)
+
   ipcMain.handle('get-state', () => snapshot())
   ipcMain.on('content-bounds', (_e, b) => {
     contentBounds = {
@@ -588,6 +647,34 @@ function registerIpc() {
   })
 }
 
+async function importPasswordsDialog() {
+  if (!vault.available()) {
+    dialog.showErrorBox('Passwords', 'Secure storage (Keychain) is not available, so passwords cannot be saved safely.')
+    return null
+  }
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: 'Choose the passwords file you exported (CSV)',
+    properties: ['openFile'],
+    filters: [{ name: 'Passwords CSV', extensions: ['csv'] }],
+  })
+  if (canceled || !filePaths[0]) return null
+  try {
+    const res = vault.importCsv(fs.readFileSync(filePaths[0], 'utf8'))
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      buttons: ['Move file to Trash', 'Keep file'],
+      defaultId: 0,
+      message: `Imported ${res.added} password${res.added === 1 ? '' : 's'}${res.skipped ? ` (${res.skipped} skipped)` : ''}.`,
+      detail: 'They are now encrypted with your Keychain. The exported CSV file is NOT encrypted, so anyone who opens it can read your passwords. We recommend moving it to the Trash.',
+    })
+    if (response === 0) await shell.trashItem(filePaths[0]).catch(() => {})
+    return res
+  } catch (err) {
+    dialog.showErrorBox('Import failed', err.message)
+    return null
+  }
+}
+
 async function loadUnpackedDialog() {
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
     title: 'Choose an unpacked Chrome extension folder (the one with manifest.json)',
@@ -712,6 +799,13 @@ function buildAppMenu() {
       })),
     },
     {
+      label: 'Passwords',
+      submenu: [
+        { label: 'Manage Passwords…', click: send('ui:passwords') },
+        { label: 'Import Passwords from Chrome / Shift (CSV)…', click: importPasswordsDialog },
+      ],
+    },
+    {
       label: 'Extensions',
       submenu: [
         { label: 'Manage Extensions…', click: send('ui:extensions') },
@@ -755,6 +849,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   store = new Store(app.getPath('userData'))
+  vault = new PasswordVault(app.getPath('userData'))
   // Lets the extension toolbar in the browser UI show extension icons.
   ElectronChromeExtensions.handleCRXProtocol(session.defaultSession)
   registerIpc()

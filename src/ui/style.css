@@ -191,3 +191,5 @@ body.apps-compact .app .name, body.apps-compact .app .remove, body.apps-compact 
 body.apps-compact .app .badge { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; font-size: 10px; padding: 0 4px; }
 body.apps-compact .add-row { text-align: center; font-size: 20px; padding: 6px 0; }
 body.apps-compact .add-row .label { display: none; }
+.pw-list { max-height: 320px; overflow-y: auto; margin-top: 10px; }
+.modal input.pw-input { width: 100%; height: 34px; border-radius: 6px; border: 1px solid #cfd4dc; background: #fff; color: var(--text); padding: 0 10px; font: inherit; outline: none; }

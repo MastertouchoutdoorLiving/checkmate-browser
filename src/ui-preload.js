@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('browser', {
   getState: () => ipcRenderer.invoke('get-state'),
   onState: on('state'),
   onCommand: (cb) => {
-    for (const c of ['ui:new-tab', 'ui:new-space', 'ui:focus-address', 'ui:toggle-apps', 'ui:toggle-compact', 'ui:extensions']) {
+    for (const c of ['ui:new-tab', 'ui:new-space', 'ui:focus-address', 'ui:toggle-apps', 'ui:toggle-compact', 'ui:extensions', 'ui:passwords']) {
       ipcRenderer.on(c, () => cb(c))
     }
   },
@@ -47,6 +47,10 @@ contextBridge.exposeInMainWorld('browser', {
   stop: () => ipcRenderer.send('nav:stop'),
 
   setSettings: (patch) => ipcRenderer.send('settings:set', patch),
+  listPasswords: () => ipcRenderer.invoke('pw:list'),
+  removePassword: (id) => ipcRenderer.invoke('pw:remove', id),
+  addPassword: (entry) => ipcRenderer.invoke('pw:add', entry),
+  importPasswords: () => ipcRenderer.invoke('pw:import'),
   listExtensions: () => ipcRenderer.invoke('ext:list'),
   removeExtension: (id) => ipcRenderer.invoke('ext:remove', id),
   loadUnpacked: () => ipcRenderer.invoke('ext:load-unpacked'),

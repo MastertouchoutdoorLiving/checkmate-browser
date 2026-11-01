@@ -243,6 +243,7 @@ $('#forward').addEventListener('click', () => api.forward())
 $('#reload').addEventListener('click', () => (activeTab() && activeTab().loading ? api.stop() : api.reload()))
 $('#toggle-apps').addEventListener('click', toggleApps)
 $('#open-extensions').addEventListener('click', () => extensionsModal())
+$('#open-passwords').addEventListener('click', () => passwordsModal())
 
 const address = $('#address')
 address.addEventListener('focus', () => {
@@ -282,6 +283,7 @@ api.onCommand((cmd) => {
   if (cmd === 'ui:toggle-apps') toggleApps()
   if (cmd === 'ui:toggle-compact') toggleCompact()
   if (cmd === 'ui:extensions') extensionsModal()
+  if (cmd === 'ui:passwords') passwordsModal()
 })
 
 // ------------------------------------------------------------------ modals
@@ -490,6 +492,72 @@ function appModal(existing, fromCurrent = false) {
 function cleanTitle(t) {
   const parts = String(t || '').replace(/\(\d+\+?\)/g, '').split(/\s[-|–·]\s/).map((x) => x.trim()).filter(Boolean)
   return (parts[parts.length - 1] || '').slice(0, 40)
+}
+
+async function passwordsModal(filter = '') {
+  const res = await api.listPasswords()
+  if (!res.ok) {
+    return openModal(`<h3>Passwords</h3><p class="hint">${esc(res.error)}</p><div class="row"><button class="btn" data-x>Close</button></div>`, (m) => (m.querySelector('[data-x]').onclick = closeModal))
+  }
+  const items = res.items
+  openModal(
+    `<h3>Passwords <span class="hint">(${items.length})</span></h3>
+     <p class="hint">Saved logins fill in automatically on their sites, in every space. They're encrypted with your Mac's Keychain and never leave this computer.
+       To bring in your old passwords, export them from Chrome or Shift (Settings → Passwords → Export) and click <b>Import</b>.</p>
+     <input type="text" name="q" placeholder="Search sites or usernames" value="${esc(filter)}" />
+     <ul class="ext-list pw-list">${
+       items.length
+         ? items
+             .map(
+               (x) => `<li data-q="${esc((x.host + ' ' + x.username + ' ' + x.name).toLowerCase())}">
+                 <img src="${esc(iconFor(x.url))}" alt="" width="18" height="18"/>
+                 <div class="meta"><div><b>${esc(x.host)}</b></div><div>${esc(x.username || '(no username)')}</div></div>
+                 <button class="btn" data-rm="${esc(x.id)}">Delete</button></li>`
+             )
+             .join('')
+         : '<li class="hint">No saved passwords yet.</li>'
+     }</ul>
+     <details><summary class="hint" style="cursor:pointer;margin-top:12px">Add a login manually</summary>
+       <form data-add>
+         <label>Website</label><input type="text" name="url" placeholder="https://app.jobtread.com" />
+         <label>Username or email</label><input type="text" name="username" />
+         <label>Password</label><input type="password" name="password" class="pw-input" />
+         <div class="row"><button class="btn" type="submit">Save login</button></div>
+       </form></details>
+     <div class="row">
+       <button class="btn primary left" data-import>Import from Chrome / Shift (CSV)…</button>
+       <button class="btn" data-x>Close</button>
+     </div>`,
+    (m) => {
+      m.querySelector('[data-x]').onclick = closeModal
+      const q = m.querySelector('input[name=q]')
+      const apply = () => {
+        const v = q.value.trim().toLowerCase()
+        m.querySelectorAll('.pw-list li[data-q]').forEach((li) => (li.style.display = !v || li.dataset.q.includes(v) ? '' : 'none'))
+      }
+      q.addEventListener('input', apply)
+      apply()
+      m.querySelector('[data-import]').onclick = async () => {
+        await api.importPasswords()
+        passwordsModal()
+      }
+      m.querySelectorAll('[data-rm]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          await api.removePassword(b.dataset.rm)
+          passwordsModal(q.value)
+        })
+      )
+      m.querySelector('[data-add]').addEventListener('submit', async (e) => {
+        e.preventDefault()
+        const f = e.target
+        let url = f.url.value.trim()
+        if (!url || !f.password.value) return
+        if (!/^https?:\/\//.test(url)) url = 'https://' + url
+        await api.addPassword({ url, username: f.username.value.trim(), password: f.password.value })
+        passwordsModal()
+      })
+    }
+  )
 }
 
 async function extensionsModal() {
