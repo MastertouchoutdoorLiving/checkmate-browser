@@ -225,3 +225,13 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 #lightbox { position: fixed; inset: 0; z-index: 40; background: rgba(20, 16, 12, .82); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: zoom-out; padding: 24px; }
 #lightbox img { max-width: 100%; max-height: calc(100% - 60px); border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .4); }
 #lightbox .btn { cursor: pointer; }
+
+/* ---------- To: contact search */
+.to-wrap { position: relative; }
+#to-list { position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); max-height: min(380px, 55vh); overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 36px rgba(60, 40, 20, .14); padding: 6px; z-index: 6; }
+.to-item { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 10px; cursor: pointer; }
+.to-item.sel, .to-item:hover { background: var(--hover); }
+.to-item .tn { font-weight: 600; }
+.to-item .tv { color: var(--muted); font-size: 12px; }
+.to-item .tk { margin-left: auto; font-size: 11px; color: var(--soft); }
+.to-empty { color: var(--muted); padding: 10px; font-size: 13px; }

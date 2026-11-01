@@ -70,6 +70,7 @@ const cleanText = (t) => String(t || '').replace(/[\uFFFC\uFFFD\u200B\uFEFF]/g, 
 
 let contacts = null
 let contactsAt = 0
+let contactList = [] // [{ name, value, kind }] for the "To:" search
 const phoneKey = (v) => {
   const d = String(v || '').replace(/\D/g, '')
   return d.length >= 7 ? d.slice(-10) : ''
@@ -78,6 +79,8 @@ const phoneKey = (v) => {
 async function loadContacts() {
   if (contacts && Date.now() - contactsAt < 10 * 60 * 1000) return contacts
   const map = new Map()
+  const list = []
+  const seen = new Set()
   const root = path.join(HOME, 'Library', 'Application Support', 'AddressBook')
   const dbs = []
   const add = (p) => fs.existsSync(p) && dbs.push(p)
@@ -96,10 +99,15 @@ async function loadContacts() {
         if (!name || !r.v) continue
         const key = r.k === 'p' ? phoneKey(r.v) : String(r.v).toLowerCase()
         if (key && !map.has(key)) map.set(key, name)
+        if (key && !seen.has(name + '|' + key)) {
+          seen.add(name + '|' + key)
+          list.push({ name, value: String(r.v).trim(), kind: r.k === 'p' ? 'phone' : 'email' })
+        }
       }
     } catch {}
   }
   contacts = map
+  contactList = list.sort((a, b) => a.name.localeCompare(b.name))
   contactsAt = Date.now()
   return map
 }
@@ -127,6 +135,11 @@ function nameFor(handle, map) {
   const h = String(handle)
   return map.get(handleKey(h)) || prettyHandle(h)
 }
+async function searchContacts() {
+  await loadContacts()
+  return contactList
+}
+
 // Contact name if saved; otherwise the name they shared with you ("Maybe: …"), flagged as maybe.
 function personFor(handle, map) {
   const h = String(handle || '')
@@ -339,4 +352,4 @@ async function addContact(c) {
   contacts = null // re-read names so the new contact shows right away
 }
 
-module.exports = { attachmentFile, attachmentPath, setCacheDir, addContact, status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }
+module.exports = { searchContacts, attachmentFile, attachmentPath, setCacheDir, addContact, status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }

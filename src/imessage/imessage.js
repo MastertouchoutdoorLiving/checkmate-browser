@@ -318,6 +318,7 @@ async function loadMessages(chat, scroll = true) {
   if (scroll) markRead(chat) // opening a conversation reads it
   current = chat
   $('#to').hidden = true
+  $('#to-list').hidden = true
   $('#text').placeholder = `Message ${chat.group ? chat.title : firstName(nameOf(chat))}…`
   let msgs
   try {
@@ -460,7 +461,10 @@ $('#compose').addEventListener('click', () => {
   $('#messages').innerHTML = '<div class="empty"><div class="empty-ico">✍️</div>Type a phone number or email above, then your message.</div>'
   $('#text').placeholder = 'Write a message…'
   $('#to').hidden = false
+  $('#to').value = ''
+  toValue = ''
   $('#to').focus()
+  showToList()
   renderChats()
 })
 $('#text').addEventListener('keydown', (e) => {
@@ -480,7 +484,7 @@ $('#send-form').addEventListener('submit', async (e) => {
   $('#send').disabled = true
   try {
     if (current.compose) {
-      const to = $('#to').value.trim()
+      const to = toValue || $('#to').value.trim()
       if (!to) return $('#to').focus()
       await window.imsg.sendToHandle(to, text)
     } else await window.imsg.sendToChat(current.guid, text)
@@ -773,6 +777,76 @@ $('#messages').addEventListener('contextmenu', (e) => {
     if (a === 'copy') navigator.clipboard.writeText(m.text || '').then(() => toast('Copied'), () => {})
     if (a === 'add') chatAction(c, 'add')
   }
+})
+
+// ---- "To:" search across your Contacts
+let contactsCache = null
+let toValue = '' // the phone/email picked from the list
+let toSel = 0
+const digitsOf = (v) => String(v || '').replace(/\D/g, '').slice(-10)
+async function showToList() {
+  if (!contactsCache) {
+    try {
+      contactsCache = await window.imsg.contacts()
+    } catch {
+      contactsCache = []
+    }
+  }
+  const q = $('#to').value.trim().toLowerCase()
+  const qd = q.replace(/\D/g, '')
+  const hits = contactsCache
+    .filter((c) => !q || c.name.toLowerCase().includes(q) || c.value.toLowerCase().includes(q) || (qd.length >= 3 && digitsOf(c.value).includes(qd)))
+    .slice(0, 80)
+  toSel = Math.min(toSel, Math.max(0, hits.length - 1))
+  const list = $('#to-list')
+  list.innerHTML = hits.length
+    ? hits
+        .map(
+          (c, i) => `<div class="to-item ${i === toSel ? 'sel' : ''}" data-i="${i}">${avatar(c.name, 'sm', c.value)}<div><div class="tn">${esc(c.name)}</div><div class="tv">${esc(c.value)}</div></div><span class="tk">${c.kind === 'email' ? 'email' : 'phone'}</span></div>`
+        )
+        .join('')
+    : `<div class="to-empty">${contactsCache.length ? 'No matching contacts. You can still type a number or email.' : 'No contacts found on this Mac.'}</div>`
+  list._hits = hits
+  list.hidden = false
+  list.querySelector('.sel')?.scrollIntoView({ block: 'nearest' })
+}
+function pickTo(c) {
+  $('#to-list').hidden = true
+  // already have a conversation with them? open it instead of starting a new one
+  const d = digitsOf(c.value)
+  const existing = chats.find((x) => !x.group && (c.kind === 'email' ? String(x.rawHandle || '').toLowerCase() === c.value.toLowerCase() : d.length >= 7 && digitsOf(x.rawHandle) === d))
+  if (existing) return loadMessages(existing)
+  toValue = c.value
+  $('#to').value = `${c.name} (${c.value})`
+  $('#chat-title').textContent = c.name
+  $('#chat-sub').textContent = c.value
+  $('#text').placeholder = `Message ${firstName(c.name)}…`
+  $('#text').focus()
+}
+$('#to').addEventListener('input', () => {
+  toValue = ''
+  toSel = 0
+  showToList()
+})
+$('#to').addEventListener('focus', () => !toValue && showToList())
+$('#to').addEventListener('blur', () => setTimeout(() => ($('#to-list').hidden = true), 150))
+$('#to').addEventListener('keydown', (e) => {
+  const hits = $('#to-list')._hits || []
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    toSel = Math.max(0, Math.min(hits.length - 1, toSel + (e.key === 'ArrowDown' ? 1 : -1)))
+    showToList()
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (!$('#to-list').hidden && hits[toSel]) pickTo(hits[toSel])
+    else $('#text').focus()
+  } else if (e.key === 'Escape') $('#to-list').hidden = true
+})
+$('#to-list').addEventListener('mousedown', (e) => {
+  const it = e.target.closest('.to-item')
+  if (!it) return
+  e.preventDefault()
+  pickTo($('#to-list')._hits[Number(it.dataset.i)])
 })
 
 $('#open-privacy').addEventListener('click', () => window.imsg.openPrivacySettings())

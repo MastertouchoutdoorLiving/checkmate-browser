@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('imsg', {
   sendToHandle: (handle, text) => ipcRenderer.invoke('imsg:send-handle', handle, text),
   prefs: () => ipcRenderer.invoke('imsg:prefs'),
   setPrefs: (p) => ipcRenderer.invoke('imsg:set-prefs', p),
+  contacts: () => ipcRenderer.invoke('imsg:contacts'),
   addContact: (c) => ipcRenderer.invoke('imsg:add-contact', c),
   whatsapp: (phone, text) => ipcRenderer.invoke('imsg:whatsapp', phone, text),
   revealAttachment: (id) => ipcRenderer.send('imsg:reveal-attachment', id),
