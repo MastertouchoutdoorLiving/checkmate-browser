@@ -26,10 +26,23 @@
         <input id="search" placeholder="Search" />
         <button id="compose" title="New message">✎</button>
       </div>
+      <div id="filters">
+        <button data-f="all" class="on">All</button>
+        <button data-f="unread">Unread <span id="unread-count"></span></button>
+        <button data-f="read">Read</button>
+        <button data-f="fav">★ Favorites</button>
+      </div>
+      <div id="favs"></div>
       <ul id="chats"></ul>
+      <div id="ctx" hidden></div>
     </aside>
     <main>
-      <header id="chat-title">Messages</header>
+      <header><span id="chat-title">Messages</span>
+        <span class="hdr-actions" id="hdr-actions" hidden>
+          <button id="hdr-unread" title="Mark as unread">Mark unread</button>
+          <button id="hdr-fav" title="Favorite">☆</button>
+        </span>
+      </header>
       <div id="messages"><div class="empty">Pick a conversation</div></div>
       <form id="send-form">
         <input id="to" placeholder="To: phone number or email" hidden />

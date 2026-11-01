@@ -62,7 +62,8 @@ function decodeBody(hex) {
   return b.slice(p, p + len).toString('utf8')
 }
 
-const cleanText = (t) => String(t || '').replace(/￼/g, '').trim()
+// Strip attachment placeholders (U+FFFC), broken characters (U+FFFD) and invisible marks.
+const cleanText = (t) => String(t || '').replace(/[\uFFFC\uFFFD\u200B\uFEFF]/g, '').trim()
 
 // ---------------------------------------------------------------- contacts (names for numbers)
 
@@ -140,7 +141,7 @@ async function listChats(limit = 150) {
   return rows.map((r) => {
     const members = String(r.members || '').split(',').filter(Boolean)
     const title = r.name || (members.length ? members.map((h) => nameFor(h, map)).join(', ') : nameFor(r.ident, map))
-    const text = cleanText(r.text || decodeBody(r.body)) || (r.att ? 'Attachment' : '')
+    const text = cleanText(r.text) || cleanText(decodeBody(r.body)) || 'Attachment'
     return {
       id: r.id,
       guid: r.guid,
@@ -150,6 +151,7 @@ async function listChats(limit = 150) {
       last: (r.fromMe ? 'You: ' : '') + text,
       date: toMs(r.date),
       unread: r.unread || 0,
+      lastFromMe: !!r.fromMe,
     }
   })
 }
@@ -171,7 +173,7 @@ async function listMessages(chatId, limit = 300) {
     fromMe: !!r.fromMe,
     service: r.service,
     sender: r.fromMe ? 'You' : nameFor(r.sender, map),
-    text: cleanText(r.text || decodeBody(r.body)),
+    text: cleanText(r.text) || cleanText(decodeBody(r.body)),
     attachment: !!r.att,
   }))
 }

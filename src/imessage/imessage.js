@@ -4,6 +4,30 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 let chats = []
 let current = null // chat object, or { compose: true }
 let lastSig = ''
+let filter = 'all'
+let prefs = { favorites: [], readUpTo: {}, manualUnread: {} }
+
+// ---- read / unread / favorites (kept by the browser; the Messages database itself is read-only)
+const isFav = (c) => prefs.favorites.includes(c.guid)
+function isUnread(c) {
+  if (prefs.manualUnread[c.guid]) return true
+  if (!c.unread || c.lastFromMe) return false
+  return !(prefs.readUpTo[c.guid] >= c.date)
+}
+const savePrefs = () => window.imsg.setPrefs(prefs)
+function markRead(c) {
+  delete prefs.manualUnread[c.guid]
+  prefs.readUpTo[c.guid] = c.date
+  savePrefs()
+}
+function markUnread(c) {
+  prefs.manualUnread[c.guid] = true
+  savePrefs()
+}
+function toggleFav(c) {
+  prefs.favorites = isFav(c) ? prefs.favorites.filter((g) => g !== c.guid) : [...prefs.favorites, c.guid]
+  savePrefs()
+}
 
 const initials = (t) => (t || '?').replace(/[^\p{L}\p{N} ]/gu, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '#'
 function fmtTime(ms) {
@@ -26,6 +50,9 @@ async function boot() {
     return
   }
   $('#app').hidden = false
+  try {
+    prefs = { favorites: [], readUpTo: {}, manualUnread: {}, ...(await window.imsg.prefs()) }
+  } catch {}
   await refreshChats()
   setInterval(refreshChats, 5000)
 }
@@ -36,8 +63,11 @@ async function refreshChats() {
   } catch (e) {
     return showError(e.message)
   }
-  const unread = chats.reduce((n, c) => n + (c.unread > 0 ? 1 : 0), 0)
-  document.title = unread ? `Messages (${unread})` : 'Messages'
+  // a new message after you read a chat makes it unread again
+  if (current && current.id) {
+    const c = chats.find((x) => x.id === current.id)
+    if (c && !prefs.manualUnread[c.guid] && document.hasFocus()) prefs.readUpTo[c.guid] = c.date
+  }
   renderChats()
   if (current && current.id) {
     const c = chats.find((x) => x.id === current.id)
@@ -45,22 +75,82 @@ async function refreshChats() {
   }
 }
 
-function renderChats() {
-  const q = $('#search').value.trim().toLowerCase()
-  $('#chats').innerHTML = chats
-    .filter((c) => !q || c.title.toLowerCase().includes(q) || c.last.toLowerCase().includes(q))
-    .map(
-      (c) => `<li data-id="${c.id}" class="${current && current.id === c.id ? 'active' : ''}">
-        <div class="avatar">${esc(c.group ? '👥' : /^[+\d(]/.test(c.title) ? '👤' : initials(c.title))}</div>
-        <div class="ci"><div class="row1"><span class="title">${esc(c.title)}</span><span class="time">${esc(fmtTime(c.date))}</span></div>
-        <div class="last">${esc(c.last)}</div></div>
-        ${c.unread ? '<span class="unread-dot"></span>' : ''}
-      </li>`
-    )
-    .join('')
+function avatarFor(c) {
+  return esc(c.group ? '👥' : /^[+\d(]/.test(c.title) ? '👤' : initials(c.title))
 }
 
+function renderChats() {
+  const unreadN = chats.filter(isUnread).length
+  document.title = unreadN ? `Messages (${unreadN})` : 'Messages'
+  $('#unread-count').textContent = unreadN ? `(${unreadN})` : ''
+  document.querySelectorAll('#filters button').forEach((b) => b.classList.toggle('on', b.dataset.f === filter))
+
+  // favorites row at the top (like pinned conversations)
+  const favs = chats.filter(isFav)
+  $('#favs').innerHTML = filter === 'all'
+    ? favs
+        .map(
+          (c) => `<div class="fav ${current && current.id === c.id ? 'active' : ''}" data-id="${c.id}" title="${esc(c.title)}">
+            <div class="avatar">${avatarFor(c)}</div><div class="fname">${esc(c.title)}</div>
+            ${isUnread(c) ? '<span class="unread-dot"></span>' : ''}</div>`
+        )
+        .join('')
+    : ''
+
+  const q = $('#search').value.trim().toLowerCase()
+  const list = chats.filter((c) => {
+    if (q && !c.title.toLowerCase().includes(q) && !c.last.toLowerCase().includes(q)) return false
+    if (filter === 'unread') return isUnread(c)
+    if (filter === 'read') return !isUnread(c)
+    if (filter === 'fav') return isFav(c)
+    return !isFav(c) || q // favorites already shown on top in "All"
+  })
+  $('#chats').innerHTML =
+    list
+      .map(
+        (c) => `<li data-id="${c.id}" class="${current && current.id === c.id ? 'active' : ''} ${isUnread(c) ? 'is-unread' : ''}">
+        <div class="avatar">${avatarFor(c)}</div>
+        <div class="ci"><div class="row1"><span class="title">${isFav(c) ? '<span class="star">★</span>' : ''}${esc(c.title)}</span><span class="time">${esc(fmtTime(c.date))}</span></div>
+        <div class="last">${esc(c.last)}</div></div>
+        ${isUnread(c) ? '<span class="unread-dot"></span>' : ''}
+      </li>`
+      )
+      .join('') ||
+    `<div class="empty-list">${filter === 'unread' ? 'No unread messages 🎉' : filter === 'fav' ? 'No favorites yet. Right-click a conversation → Add to Favorites.' : 'Nothing here'}</div>`
+  renderHeader()
+}
+
+function renderHeader() {
+  const c = current && current.id && chats.find((x) => x.id === current.id)
+  $('#hdr-actions').hidden = !c
+  if (!c) return
+  $('#hdr-unread').textContent = isUnread(c) ? 'Mark read' : 'Mark unread'
+  $('#hdr-fav').textContent = isFav(c) ? '★' : '☆'
+  $('#hdr-fav').classList.toggle('on', isFav(c))
+  $('#hdr-fav').title = isFav(c) ? 'Remove from Favorites' : 'Add to Favorites'
+}
+
+function showContextMenu(c, x, y) {
+  const m = $('#ctx')
+  m.innerHTML = `<button data-a="read">${isUnread(c) ? 'Mark as read' : 'Mark as unread'}</button>
+    <button data-a="fav">${isFav(c) ? 'Remove from Favorites' : 'Add to Favorites'}</button>`
+  m.style.left = Math.min(x, innerWidth - 200) + 'px'
+  m.style.top = Math.min(y, innerHeight - 90) + 'px'
+  m.hidden = false
+  m.onclick = (e) => {
+    const a = e.target.closest('button')?.dataset.a
+    if (a === 'read') isUnread(c) ? markRead(c) : markUnread(c)
+    if (a === 'fav') toggleFav(c)
+    m.hidden = true
+    renderChats()
+  }
+}
+document.addEventListener('mousedown', (e) => {
+  if (!e.target.closest('#ctx')) $('#ctx').hidden = true
+})
+
 async function loadMessages(chat, scroll = true) {
+  if (scroll) markRead(chat) // opening a conversation reads it
   current = chat
   $('#to').hidden = true
   $('#chat-title').textContent = chat.title
@@ -88,7 +178,7 @@ async function loadMessages(chat, scroll = true) {
     }
     if (chat.group && !m.fromMe && m.sender !== lastSender) html += `<div class="sender">${esc(m.sender)}</div>`
     lastSender = m.fromMe ? 'me' : m.sender
-    const body = m.text ? esc(m.text) : m.attachment ? '<span class="att">📎 Attachment (open in Messages to view)</span>' : ''
+    const body = m.text ? esc(m.text) : '<span class="att">📎 Photo or attachment (open in Messages to view)</span>'
     if (body) html += `<div class="msg ${m.fromMe ? 'me' : 'them'} ${m.service === 'SMS' ? 'sms' : ''}" title="${esc(new Date(m.date).toLocaleString())}">${body}</div>`
   }
   box.innerHTML = html || '<div class="empty">No messages</div>'
@@ -102,6 +192,40 @@ function showError(msg) {
   setTimeout(() => ($('#error').hidden = true), 8000)
 }
 
+$('#filters').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (!b) return
+  filter = b.dataset.f
+  renderChats()
+})
+const chatFromEvent = (e) => {
+  const el = e.target.closest('li[data-id], .fav[data-id]')
+  return el && chats.find((x) => x.id === Number(el.dataset.id))
+}
+for (const sel of ['#chats', '#favs']) {
+  $(sel).addEventListener('contextmenu', (e) => {
+    const c = chatFromEvent(e)
+    if (!c) return
+    e.preventDefault()
+    showContextMenu(c, e.clientX, e.clientY)
+  })
+}
+$('#favs').addEventListener('click', (e) => {
+  const c = chatFromEvent(e)
+  if (c) loadMessages(c)
+})
+$('#hdr-unread').addEventListener('click', () => {
+  const c = chats.find((x) => x.id === current?.id)
+  if (!c) return
+  isUnread(c) ? markRead(c) : markUnread(c)
+  renderChats()
+})
+$('#hdr-fav').addEventListener('click', () => {
+  const c = chats.find((x) => x.id === current?.id)
+  if (!c) return
+  toggleFav(c)
+  renderChats()
+})
 $('#chats').addEventListener('click', (e) => {
   const li = e.target.closest('li')
   if (!li) return

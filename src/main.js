@@ -468,6 +468,21 @@ function registerIpc() {
   ipcMain.handle('imsg:messages', imsgOnly((id) => imessage.listMessages(id)))
   ipcMain.handle('imsg:send-chat', imsgOnly((guid, text) => imessage.sendToChat(String(guid), String(text))))
   ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))
+  // Favorites and read/unread marks live in the browser (Messages' own database is read-only).
+  ipcMain.handle('imsg:prefs', imsgOnly(() => store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {} }))
+  ipcMain.handle(
+    'imsg:set-prefs',
+    imsgOnly((prefs) => {
+      const p = prefs || {}
+      store.state.settings.imsg = {
+        favorites: Array.isArray(p.favorites) ? p.favorites.map(String).slice(0, 500) : [],
+        readUpTo: p.readUpTo && typeof p.readUpTo === 'object' ? p.readUpTo : {},
+        manualUnread: p.manualUnread && typeof p.manualUnread === 'object' ? p.manualUnread : {},
+      }
+      store.save()
+      return true
+    })
+  )
   ipcMain.on('imsg:open-privacy', (e) => {
     if (findTabByWebContents(e.sender)?.internal) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')
   })
