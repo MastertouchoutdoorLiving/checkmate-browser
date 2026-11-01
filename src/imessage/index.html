@@ -51,6 +51,9 @@
           <div id="chat-sub"></div>
         </div>
         <div class="hdr-actions" id="hdr-actions" hidden>
+          <button id="hdr-add" class="icon-btn" title="Add to Contacts" hidden>
+            <svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5M19 8v6M16 11h6"/></svg>
+          </button>
           <button id="hdr-fav" class="icon-btn" title="Add to Favorites">
             <svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>
           </button>
@@ -77,6 +80,26 @@
     </main>
 
     <aside id="details" hidden></aside>
+  </div>
+
+  <div id="contact-modal" hidden>
+    <form class="sheet" id="contact-form">
+      <h2>New contact</h2>
+      <p class="sheet-sub">Saved to your Contacts app (iCloud), so it shows on your iPhone too.</p>
+      <div class="grid2">
+        <label>First name<input name="first" autocomplete="off" /></label>
+        <label>Last name<input name="last" autocomplete="off" /></label>
+      </div>
+      <label>Company<input name="company" autocomplete="off" /></label>
+      <label>Phone<input name="phone" autocomplete="off" /></label>
+      <label>Email<input name="email" autocomplete="off" /></label>
+      <label>Notes<textarea name="note" rows="2"></textarea></label>
+      <div class="sheet-err" id="contact-err" hidden></div>
+      <div class="sheet-actions">
+        <button type="button" id="contact-cancel" class="btn">Cancel</button>
+        <button type="submit" id="contact-save" class="btn primary">Save contact</button>
+      </div>
+    </form>
   </div>
   <script src="imessage.js"></script>
 </body>

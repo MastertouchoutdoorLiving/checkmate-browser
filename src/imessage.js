@@ -131,8 +131,8 @@ function nameFor(handle, map) {
 function personFor(handle, map) {
   const h = String(handle || '')
   const saved = map.get(handleKey(h))
-  if (saved) return { handle: h, name: saved, maybe: '' }
-  return { handle: prettyHandle(h), name: prettyHandle(h), maybe: nicks.get(handleKey(h)) || '' }
+  if (saved) return { handle: h, rawHandle: h, name: saved, maybe: '', saved: true }
+  return { handle: prettyHandle(h), rawHandle: h, name: prettyHandle(h), maybe: nicks.get(handleKey(h)) || '', saved: false }
 }
 
 // ---------------------------------------------------------------- queries
@@ -183,6 +183,7 @@ async function listChats(limit = 150) {
       handle: prettyHandle(members.length === 1 ? members[0] : r.ident),
       rawHandle: members.length === 1 ? members[0] : r.ident,
       maybe,
+      saved: people.length === 1 && people[0].saved,
       members: members.map((h) => personFor(h, map)),
     }
   })
@@ -254,4 +255,29 @@ async function sendToHandle(handle, text) {
   }
 }
 
-module.exports = { status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }
+// Save a new person in the Contacts app. It goes to your default Contacts account, which is
+// iCloud for most people, so it syncs to your iPhone. Values are passed as arguments, never as code.
+async function addContact(c) {
+  const v = (x) => String(x || '').trim().slice(0, 200)
+  const first = v(c.first), last = v(c.last), company = v(c.company), phone = v(c.phone), email = v(c.email), note = String(c.note || '').trim().slice(0, 2000)
+  if (!first && !last && !company) throw new Error('Enter a name or company')
+  await osascript(
+    [
+      'on run argv',
+      'set {fn, ln, co, ph, em, nt} to argv',
+      'tell application "Contacts"',
+      'set p to make new person with properties {first name:fn, last name:ln}',
+      'if co is not "" then set organization of p to co',
+      'if nt is not "" then set note of p to nt',
+      'if ph is not "" then make new phone at end of phones of p with properties {label:"mobile", value:ph}',
+      'if em is not "" then make new email at end of emails of p with properties {label:"work", value:em}',
+      'save',
+      'end tell',
+      'end run',
+    ],
+    [first, last, company, phone, email, note]
+  )
+  contacts = null // re-read names so the new contact shows right away
+}
+
+module.exports = { addContact, status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }

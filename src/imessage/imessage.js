@@ -5,7 +5,8 @@ let chats = []
 let current = null // chat object, or { compose: true }
 let lastSig = ''
 let filter = 'all'
-let prefs = { favorites: [], readUpTo: {}, manualUnread: {} }
+let curMsgs = []
+let prefs = { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} }
 let showDetails = (() => {
   try {
     const v = localStorage.getItem('imsg-details')
@@ -19,6 +20,8 @@ const ICON = {
   star: '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>',
   unread: '<svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h9M4 18h11"/><circle cx="19" cy="7" r="3" style="fill:#f26b3a;stroke:none"/></svg>',
   open: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>',
+  addPerson: '<svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5M19 8v6M16 11h6"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 001 1h8a1 1 0 001-1l1-12M9 7V4h6v3"/></svg>',
   bubble: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>',
 }
 
@@ -30,6 +33,27 @@ function isUnread(c) {
   return !(prefs.readUpTo[c.guid] >= c.date)
 }
 const savePrefs = () => window.imsg.setPrefs(prefs)
+// Deleted conversations are hidden here until someone sends a new message in them.
+const isHidden = (c) => prefs.hidden[c.guid] >= c.date
+function hideChat(c) {
+  prefs.hidden[c.guid] = c.date
+  delete prefs.manualUnread[c.guid]
+  prefs.favorites = prefs.favorites.filter((g) => g !== c.guid)
+  savePrefs()
+  if (current && current.id === c.id) {
+    current = null
+    lastSig = ''
+    $('#messages').innerHTML = '<div class="empty"><div class="empty-ico">💬</div>Pick a conversation</div>'
+    $('#chat-title').textContent = 'Messages'
+    $('#chat-sub').textContent = ''
+  }
+  renderChats()
+  toast('Conversation deleted', 'Undo', () => {
+    delete prefs.hidden[c.guid]
+    savePrefs()
+    renderChats()
+  })
+}
 function markRead(c) {
   delete prefs.manualUnread[c.guid]
   prefs.readUpTo[c.guid] = c.date
@@ -107,7 +131,8 @@ async function boot() {
   }
   $('#app').hidden = false
   try {
-    prefs = { favorites: [], readUpTo: {}, manualUnread: {}, ...(await window.imsg.prefs()) }
+    prefs = { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {}, ...(await window.imsg.prefs()) }
+    prefs.hidden = prefs.hidden || {}
   } catch {}
   await refreshChats()
   setInterval(refreshChats, 5000)
@@ -132,14 +157,15 @@ async function refreshChats() {
 }
 
 function renderChats() {
-  const unreadN = chats.filter(isUnread).length
+  const visible = chats.filter((c) => !isHidden(c))
+  const unreadN = visible.filter(isUnread).length
   document.title = unreadN ? `Messages (${unreadN})` : 'Messages'
   $('#unread-count').textContent = unreadN || ''
   document.querySelectorAll('#filters button').forEach((b) => b.classList.toggle('on', b.dataset.f === filter))
   const q = $('#search').value.trim().toLowerCase()
 
   // favorites as big avatars at the top, with a peek at the newest unread message
-  const favs = chats.filter(isFav)
+  const favs = visible.filter(isFav)
   $('#favs').innerHTML =
     filter === 'all' && !q
       ? favs
@@ -154,7 +180,7 @@ function renderChats() {
           .join('')
       : ''
 
-  const list = chats.filter((c) => {
+  const list = visible.filter((c) => {
     if (q && ![c.title, c.maybe, c.last].some((x) => String(x || '').toLowerCase().includes(q))) return false
     if (filter === 'unread') return isUnread(c)
     if (filter === 'read') return !isUnread(c)
@@ -170,12 +196,13 @@ function renderChats() {
       lastGroup = g
     }
     const u = isUnread(c)
-    html += `<div data-id="${c.id}" class="item ${current && current.id === c.id ? 'active' : ''} ${u ? 'is-unread' : ''}">
+    html += `<div class="swipe" data-id="${c.id}"><div class="swipe-actions"><button data-sw="read" class="sw-read">${u ? 'Read' : 'Unread'}</button><button data-sw="delete" class="sw-del">Delete</button></div>
+      <div class="item ${current && current.id === c.id ? 'active' : ''} ${u ? 'is-unread' : ''}">
       ${chatAvatar(c, '')}
       <div class="ci"><div class="row1"><span class="title"><span class="tname">${isFav(c) ? '<span class="star">★</span>' : ''}${esc(nameOf(c))}</span>${maybeTag(c.maybe)}</span><span class="time">${esc(fmtTime(c.date))}</span></div>
       <div class="last">${esc(c.last)}</div></div>
       ${u ? '<span class="dot"></span>' : ''}
-    </div>`
+    </div></div>`
   }
   $('#chats').innerHTML =
     html ||
@@ -203,6 +230,7 @@ function renderHeader() {
   const u = isUnread(c)
   $('#hdr-unread').title = u ? 'Mark as read' : 'Mark as unread'
   $('#hdr-unread').classList.toggle('on', u)
+  $('#hdr-add').hidden = c.group || c.saved !== false
   $('#hdr-fav').classList.toggle('on', isFav(c))
   $('#hdr-fav').title = isFav(c) ? 'Remove from Favorites' : 'Add to Favorites'
   $('#hdr-info').classList.toggle('on', showDetails)
@@ -223,6 +251,7 @@ function renderDetails() {
       <div class="d-title">${esc(nameOf(c))}</div>
       ${!c.group && c.handle && c.handle !== nameOf(c) ? `<div class="d-handle">${esc(c.handle)}</div>` : ''}
       ${c.maybe ? '<div class="d-note">Name they shared with you. Not in your Contacts.</div>' : ''}
+      ${!c.group && c.saved === false ? `<button class="add-contact" data-a="add">${ICON.addPerson}Add to Contacts</button>` : ''}
       ${tag}
     </div>
     <div class="d-quick">
@@ -234,7 +263,7 @@ function renderDetails() {
       <div class="d-label">${c.group ? `Members (${members.length})` : 'Contact'}</div>
       ${members
         .map(
-          (m) => `<div class="member">${avatar(m.maybe || m.name, 'sm', m.handle)}<div><div class="mn">${m.maybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.maybe) : esc(m.name)}</div>${(m.maybe || m.name) !== m.handle ? `<div class="mh">${esc(m.handle || '')}</div>` : ''}</div></div>`
+          (m) => `<div class="member">${avatar(m.maybe || m.name, 'sm', m.handle)}<div><div class="mn">${m.maybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.maybe) : esc(m.name)}</div>${(m.maybe || m.name) !== m.handle ? `<div class="mh">${esc(m.handle || '')}</div>` : ''}</div>${c.group && m.saved === false ? `<button class="add-link" data-add="${esc(m.rawHandle || m.handle)}" data-maybe="${esc(m.maybe || '')}">Add</button>` : ''}</div>`
         )
         .join('')}
     </div>
@@ -243,6 +272,7 @@ function renderDetails() {
       <button class="d-action" data-a="read">${ICON.unread}${u ? 'Mark as read' : 'Mark as unread'}</button>
       <button class="d-action" data-a="fav">${ICON.star}${fav ? 'Remove from Favorites' : 'Add to Favorites'}</button>
       <button class="d-action" data-a="open">${ICON.open}Open in Messages app</button>
+      <button class="d-action danger" data-a="delete">${ICON.trash}Delete conversation</button>
     </div>`
 }
 
@@ -251,6 +281,8 @@ function chatAction(c, a) {
   if (a === 'read') isUnread(c) ? markRead(c) : markUnread(c)
   if (a === 'fav') toggleFav(c)
   if (a === 'open') window.imsg.openInMessages(c.group ? '' : c.rawHandle || c.handle)
+  if (a === 'add') return openContactForm(c.rawHandle || c.handle, c.maybe)
+  if (a === 'delete') return hideChat(c)
   renderChats()
 }
 
@@ -258,7 +290,9 @@ function showContextMenu(c, x, y) {
   const m = $('#ctx')
   m.innerHTML = `<button data-a="read">${isUnread(c) ? 'Mark as read' : 'Mark as unread'}</button>
     <button data-a="fav">${isFav(c) ? 'Remove from Favorites' : 'Add to Favorites'}</button>
-    <button data-a="open">Open in Messages app</button>`
+    ${!c.group && c.saved === false ? '<button data-a="add">Add to Contacts…</button>' : ''}
+    <button data-a="open">Open in Messages app</button>
+    <button data-a="delete" class="danger">Delete conversation</button>`
   m.style.left = Math.min(x, innerWidth - 200) + 'px'
   m.style.top = Math.min(y, innerHeight - 120) + 'px'
   m.hidden = false
@@ -284,6 +318,7 @@ async function loadMessages(chat, scroll = true) {
     return showError(e.message)
   }
   if (current !== chat && current?.id !== chat.id) return
+  curMsgs = msgs
   const sig = chat.id + ':' + msgs.length + ':' + (msgs.length ? msgs[msgs.length - 1].id : 0)
   if (!scroll && sig === lastSig) return
   lastSig = sig
@@ -348,6 +383,7 @@ for (const sel of ['#chats', '#favs']) {
   })
 }
 $('#hdr-unread').addEventListener('click', () => chatAction(currentChat(), 'read'))
+$('#hdr-add').addEventListener('click', () => chatAction(currentChat(), 'add'))
 $('#hdr-fav').addEventListener('click', () => chatAction(currentChat(), 'fav'))
 $('#hdr-info').addEventListener('click', () => {
   showDetails = !showDetails
@@ -358,6 +394,8 @@ $('#hdr-info').addEventListener('click', () => {
   renderDetails()
 })
 $('#details').addEventListener('click', (e) => {
+  const add = e.target.closest('[data-add]')
+  if (add) return openContactForm(add.dataset.add, add.dataset.maybe)
   const a = e.target.closest('button[data-a]')?.dataset.a
   if (a) chatAction(currentChat(), a)
 })
@@ -410,6 +448,174 @@ $('#send-form').addEventListener('submit', async (e) => {
     $('#send').disabled = false
   }
 })
+// ---- add a contact (saved through the Contacts app, so it syncs to iCloud and your iPhone)
+function openContactForm(handle, maybe) {
+  const f = $('#contact-form')
+  f.reset()
+  $('#contact-err').hidden = true
+  const isEmail = /@/.test(handle || '')
+  const parts = String(maybe || '').trim().split(/\s+/).filter(Boolean)
+  f.first.value = parts[0] || ''
+  f.last.value = parts.slice(1).join(' ')
+  f.phone.value = isEmail ? '' : handle || ''
+  // an email address they sent you in this conversation, if any
+  const sent = curMsgs.filter((m) => !m.fromMe && m.text).map((m) => m.text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)).find(Boolean)
+  f.email.value = isEmail ? handle : sent ? sent[0].replace(/\.$/, '') : ''
+  $('#contact-modal').hidden = false
+  ;(f.first.value ? f.last.value ? f.company : f.last : f.first).focus()
+}
+const closeContactForm = () => ($('#contact-modal').hidden = true)
+$('#contact-cancel').addEventListener('click', closeContactForm)
+$('#contact-modal').addEventListener('mousedown', (e) => e.target.id === 'contact-modal' && closeContactForm())
+document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('#contact-modal').hidden && closeContactForm())
+$('#contact-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const f = e.target
+  const data = Object.fromEntries(['first', 'last', 'company', 'phone', 'email', 'note'].map((k) => [k, f[k].value.trim()]))
+  if (!data.first && !data.last && !data.company) {
+    $('#contact-err').textContent = 'Enter a name or a company.'
+    $('#contact-err').hidden = false
+    return f.first.focus()
+  }
+  $('#contact-save').disabled = true
+  try {
+    await window.imsg.addContact(data)
+    closeContactForm()
+    toast('Saved to Contacts')
+    setTimeout(refreshChats, 1500)
+    setTimeout(refreshChats, 5000)
+  } catch (err) {
+    $('#contact-err').textContent = 'Could not save: ' + String(err.message || err).replace(/^Error invoking remote method[^:]*: (Error: )?/, '') + ' (If macOS asked, allow the browser to control Contacts in System Settings → Privacy & Security → Automation.)'
+    $('#contact-err').hidden = false
+  } finally {
+    $('#contact-save').disabled = false
+  }
+})
+function toast(msg, actionLabel, action) {
+  let t = $('#toast')
+  if (!t) {
+    t = document.createElement('div')
+    t.id = 'toast'
+    document.body.appendChild(t)
+  }
+  t.innerHTML = esc(msg) + (actionLabel ? ` <button>${esc(actionLabel)}</button>` : '')
+  if (action) t.querySelector('button').onclick = () => {
+    t.hidden = true
+    action()
+  }
+  t.hidden = false
+  clearTimeout(toast.t)
+  toast.t = setTimeout(() => (t.hidden = true), actionLabel ? 6000 : 2500)
+}
+
+// ---- swipe a conversation to the left (trackpad or mouse drag) to show Unread / Delete
+const SW_OPEN = 150 // width of the two buttons
+let swOpen = null // the row that is currently slid open
+function slide(row, x, animate) {
+  const item = row.querySelector('.item')
+  item.style.transition = animate ? 'transform .18s ease' : 'none'
+  item.style.transform = x ? `translateX(${-x}px)` : ''
+  row.classList.toggle('sliding', x > 0)
+  row._x = x
+}
+function closeSwipe(except) {
+  if (swOpen && swOpen !== except && swOpen.isConnected) slide(swOpen, 0, true)
+  if (swOpen !== except) swOpen = null
+}
+function settle(row) {
+  const x = row._x || 0
+  const c = chats.find((k) => k.id === Number(row.dataset.id))
+  if (x > row.offsetWidth * 0.6 && c) {
+    // a long swipe deletes right away, like on the iPhone
+    slide(row, row.offsetWidth, true)
+    setTimeout(() => hideChat(c), 180)
+    swOpen = null
+  } else if (x > 50) {
+    slide(row, SW_OPEN, true)
+    swOpen = row
+  } else {
+    slide(row, 0, true)
+    if (swOpen === row) swOpen = null
+  }
+}
+let wheelRow = null
+let wheelTimer = null
+$('#chats').addEventListener(
+  'wheel',
+  (e) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return
+    const row = e.target.closest('.swipe')
+    if (!row) return
+    e.preventDefault()
+    if (wheelRow !== row) {
+      closeSwipe(row)
+      wheelRow = row
+    }
+    slide(row, Math.max(0, Math.min(row.offsetWidth, (row._x || 0) + e.deltaX)), false)
+    clearTimeout(wheelTimer)
+    wheelTimer = setTimeout(() => {
+      settle(row)
+      wheelRow = null
+    }, 140)
+  },
+  { passive: false }
+)
+let drag = null
+$('#chats').addEventListener('pointerdown', (e) => {
+  const row = e.target.closest('.swipe')
+  if (!row || e.button !== 0 || e.target.closest('.swipe-actions')) return
+  drag = { row, x0: e.clientX, y0: e.clientY, start: row._x || 0, moved: false }
+})
+document.addEventListener('pointermove', (e) => {
+  if (!drag) return
+  const dx = drag.x0 - e.clientX
+  if (!drag.moved) {
+    if (Math.abs(dx) < 8 || Math.abs(e.clientY - drag.y0) > Math.abs(dx)) return
+    drag.moved = true
+    closeSwipe(drag.row)
+  }
+  slide(drag.row, Math.max(0, Math.min(drag.row.offsetWidth, drag.start + dx)), false)
+})
+document.addEventListener('pointerup', () => {
+  if (!drag) return
+  const d = drag
+  drag = null
+  if (d.moved) {
+    settle(d.row)
+    // swallow the click that follows a drag
+    d.row.addEventListener('click', (ev) => ev.stopPropagation(), { capture: true, once: true })
+  }
+})
+$('#chats').addEventListener(
+  'click',
+  (e) => {
+    const b = e.target.closest('[data-sw]')
+    if (b) {
+      e.stopPropagation()
+      const row = b.closest('.swipe')
+      const c = chats.find((k) => k.id === Number(row.dataset.id))
+      swOpen = null
+      if (!c) return
+      if (b.dataset.sw === 'delete') {
+        slide(row, row.offsetWidth, true)
+        setTimeout(() => hideChat(c), 180)
+      } else chatAction(c, 'read')
+      return
+    }
+    const row = e.target.closest('.swipe')
+    if (row && row._x > 0) {
+      // tapping a slid-open row just closes it
+      e.stopPropagation()
+      slide(row, 0, true)
+      swOpen = null
+    }
+  },
+  true
+)
+document.addEventListener('mousedown', (e) => {
+  if (swOpen && !e.target.closest('.swipe')) closeSwipe(null)
+})
+
 $('#open-privacy').addEventListener('click', () => window.imsg.openPrivacySettings())
 
 boot()
