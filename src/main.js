@@ -214,7 +214,8 @@ function patchSidePanelExtension(dir) {
     const mf = path.join(dir, 'manifest.json')
     const m = JSON.parse(fs.readFileSync(mf, 'utf8'))
     const bg = m.background && m.background.service_worker
-    if (m.manifest_version !== 3 || !m.side_panel || !bg) return false
+    const usesPanel = m.side_panel || (m.permissions || []).includes('sidePanel')
+    if (m.manifest_version !== 3 || !usesPanel || !bg) return false
     const shim = fs.readFileSync(path.join(__dirname, 'ext-shims', 'sidepanel-sw.js'), 'utf8')
     const shimPath = path.join(dir, SP_SHIM)
     let changed = !fs.existsSync(shimPath) || fs.readFileSync(shimPath, 'utf8') !== shim
@@ -507,8 +508,19 @@ function sidePanelConfig(spaceId, extId) {
   const rt = getRuntime(spaceId)
   const ext = rt.session.extensions ? rt.session.extensions.getExtension(extId) : rt.session.getExtension(extId)
   const saved = rt.sidePanel.get(extId) || {}
-  const manifestPath = ext && ext.manifest && ext.manifest.side_panel && ext.manifest.side_panel.default_path
-  return { path: saved.path || manifestPath || '', openOnClick: saved.openOnClick, enabled: saved.enabled !== false, ext }
+  const m = (ext && ext.manifest) || {}
+  let p = saved.path || (m.side_panel && m.side_panel.default_path) || ''
+  // Extensions that set their panel page from code: look for the usual file names.
+  if (!p && ext && (m.permissions || []).includes('sidePanel')) {
+    const guesses = ['sidepanel.html', 'side_panel.html', 'side-panel.html', 'sidepanel/index.html', 'side_panel/index.html', 'sidePanel.html', 'panel.html', 'src/sidepanel/index.html', 'pages/sidepanel.html']
+    p = guesses.find((g) => fs.existsSync(path.join(ext.path, g))) || ''
+    if (!p) {
+      try {
+        p = fs.readdirSync(ext.path).find((f) => /side.?panel.*\.html$/i.test(f)) || ''
+      } catch {}
+    }
+  }
+  return { path: p, openOnClick: saved.openOnClick, enabled: saved.enabled !== false, ext }
 }
 
 function closeSidePanel() {
