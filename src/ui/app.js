@@ -241,12 +241,21 @@ function confirmModal(title, detail, okLabel, onOk) {
   )
 }
 
+// "JobTread, https://app.jobtread.com" or "JobTread https://..." or just "https://..."
+function parseAppLine(line) {
+  const m = /(\S+\.\S+)\s*$/.exec(line.trim())
+  if (!m) return null
+  const url = /^[a-z]+:\/\//i.test(m[1]) ? m[1] : 'https://' + m[1]
+  const name = line.trim().slice(0, m.index).replace(/[,:\-\s]+$/, '').trim() || hostOf(url).replace(/^www\./, '')
+  return { name, url }
+}
+
 const STARTER = ['Gmail', 'Google Calendar', 'Google Drive', 'Slack', 'WhatsApp', 'Outlook']
 
 function spaceModal(space) {
   const editing = !!space
   let color = editing ? space.color : state.colors[state.spaces.length % state.colors.length]
-  const starters = state.catalog.filter((c) => STARTER.includes(c.name))
+  const starters = [...state.catalog].sort((a, b) => (STARTER.indexOf(a.name) + 1 || 99) - (STARTER.indexOf(b.name) + 1 || 99))
   const idx = editing ? state.spaces.findIndex((s) => s.id === space.id) : -1
   openModal(
     `<h3>${editing ? 'Space settings' : 'New space'}</h3>
@@ -262,7 +271,10 @@ function spaceModal(space) {
            : `<label>Start with these apps</label>
               <div class="catalog">${starters
                 .map((c, i) => `<label class="check"><input type="checkbox" name="app" value="${i}" ${i < 3 ? 'checked' : ''}/> <img src="${iconFor(c.url)}" alt="">${esc(c.name)}</label>`)
-                .join('')}</div>`
+                .join('')}</div>
+              <label>Add any other apps (one per line: name, then the link)</label>
+              <textarea name="custom" rows="3" placeholder="JobTread, https://app.jobtread.com/jobs&#10;Schedulus, https://your-schedulus-link&#10;https://any-other-site.com"></textarea>
+              <p class="hint">You can always add more later with "+ Add app", or the ☆ next to the address bar.</p>`
        }
        <div class="row">
          ${
@@ -295,7 +307,13 @@ function spaceModal(space) {
         const name = (fd.get('name') || '').trim() || (editing ? space.name : 'New space')
         closeModal()
         if (editing) api.updateSpace(space.id, { name, color })
-        else await api.addSpace({ name, color, apps: fd.getAll('app').map((i) => starters[Number(i)]) })
+        else {
+          const custom = String(fd.get('custom') || '')
+            .split('\n')
+            .map(parseAppLine)
+            .filter(Boolean)
+          await api.addSpace({ name, color, apps: [...fd.getAll('app').map((i) => starters[Number(i)]), ...custom] })
+        }
       })
     }
   )

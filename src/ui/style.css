@@ -156,3 +156,6 @@ browser-action-list::part(action):hover { background-color: var(--panel-hover); 
 .app .name small { color: var(--muted); font-size: 11px; margin-top: 1px; }
 .modal a { color: var(--accent); }
 .btn:disabled { opacity: .4; cursor: default; }
+.modal textarea { width: 100%; border-radius: 6px; border: 1px solid var(--panel-active); background: var(--rail); color: var(--text); padding: 8px 10px; font: inherit; outline: none; resize: vertical; user-select: text; }
+.modal textarea:focus { border-color: var(--accent); }
+.modal .catalog:has(.check) { max-height: 190px; overflow-y: auto; }
