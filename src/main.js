@@ -272,6 +272,11 @@ function wireTab(tab) {
   })
   wc.on('page-favicon-updated', (_e, favicons) => {
     tab.favicon = favicons[0] || null
+    // Remember the site's real icon for the apps list (Google's icon service misses many web apps).
+    if (tab.appId && tab.favicon && !tab.favicon.startsWith('data:') && tab.favicon.length < 500) {
+      const a = store.getSpace(tab.spaceId)?.apps.find((x) => x.id === tab.appId)
+      if (a && a.icon !== tab.favicon) store.updateApp(tab.spaceId, tab.appId, { icon: tab.favicon })
+    }
     pushState()
   })
 
@@ -507,6 +512,15 @@ function registerIpc() {
       const tab = [...(runtimes.get(spaceId)?.tabs.values() || [])].find((t) => t.appId === appId)
       if (tab) tab.view.webContents.loadURL(a.url).catch(() => {})
     }
+    pushState()
+  })
+  ipcMain.on('app:reorder', (_e, spaceId, ids) => {
+    const s = store.getSpace(spaceId)
+    if (s) store.reorder(s.apps, ids)
+    pushState()
+  })
+  ipcMain.on('space:reorder', (_e, ids) => {
+    store.reorder(store.state.spaces, ids)
     pushState()
   })
   ipcMain.on('app:move', (_e, spaceId, appId, delta) => {

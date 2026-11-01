@@ -124,9 +124,18 @@ class Store {
   updateApp(spaceId, appId, patch) {
     const a = this.getSpace(spaceId)?.apps.find((x) => x.id === appId)
     if (!a) return
-    for (const k of ['name', 'url', 'subtitle']) if (patch[k] != null) a[k] = patch[k]
+    for (const k of ['name', 'url', 'subtitle', 'icon']) if (patch[k] != null) a[k] = patch[k]
     this.save()
     return a
+  }
+
+  // Reorder to match a list of ids (from drag and drop).
+  reorder(list, ids) {
+    const byId = new Map(list.map((x) => [x.id, x]))
+    const out = ids.map((id) => byId.get(id)).filter(Boolean)
+    for (const x of list) if (!out.includes(x)) out.push(x)
+    list.splice(0, list.length, ...out)
+    this.save()
   }
 
   moveApp(spaceId, appId, delta) {

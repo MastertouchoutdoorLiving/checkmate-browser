@@ -29,12 +29,13 @@ function render() {
   const space = activeSpace()
   if (!space) return
   document.body.classList.toggle('apps-hidden', !state.settings.appsPanelOpen)
+  if (!resizing) document.documentElement.style.setProperty('--panel-w', clampW(state.settings.panelWidth || 230) + 'px')
 
-  // Spaces rail
-  $('#spaces').innerHTML = state.spaces
+  // Spaces rail (not redrawn mid-drag, or the drag would be cancelled)
+  if (!dragging) $('#spaces').innerHTML = state.spaces
     .map(
       (s, i) => `
-      <button class="space ${s.id === space.id ? 'active' : ''}" data-id="${s.id}"
+      <button draggable="true" class="space ${s.id === space.id ? 'active' : ''}" data-id="${s.id}"
         style="background:${esc(s.color)}" title="${esc(s.name)} (Ctrl/Cmd+${i + 1})">
         ${esc(initials(s.name))}
         ${s.unread ? badgeHtml(s.unread) : s.hasDot ? '<span class="dot"></span>' : ''}
@@ -44,14 +45,14 @@ function render() {
 
   // Apps panel
   $('#space-name').textContent = space.name
-  $('#apps').innerHTML = space.apps
+  if (!dragging) $('#apps').innerHTML = space.apps
     .map((a) => {
       const tab = space.tabs.find((t) => t.appId === a.id)
       const isActive = tab && tab.id === space.activeTabId
       const badge = tab ? (tab.badge > 0 ? badgeHtml(tab.badge) : tab.badge === -1 ? '<span class="open-dot" style="background:var(--badge)"></span>' : '<span class="open-dot"></span>') : ''
       return `
-        <li class="app ${isActive ? 'active' : ''}" data-id="${a.id}" title="${esc(a.url)}">
-          <img src="${esc(tab && tab.favicon ? tab.favicon : iconFor(a.url))}" alt="" />
+        <li draggable="true" class="app ${isActive ? 'active' : ''}" data-id="${a.id}" title="${esc(a.url)}">
+          <img src="${esc(tab && tab.favicon ? tab.favicon : a.icon || iconFor(a.url))}" alt="" />
           <span class="name"><span>${esc(a.name)}</span>${a.subtitle ? `<small>${esc(a.subtitle)}</small>` : ''}</span>
           ${badge}
           <button class="remove" data-edit="${a.id}" title="Edit app">✎</button>
@@ -110,6 +111,71 @@ function reportBounds() {
 }
 new ResizeObserver(reportBounds).observe($('#content'))
 window.addEventListener('resize', reportBounds)
+
+// ------------------------------------------------------------------ resize + drag and drop
+
+let resizing = false
+let dragging = null // { list: '#apps' | '#spaces', id }
+const clampW = (w) => Math.max(160, Math.min(480, Math.round(w)))
+
+$('#panel-resizer').addEventListener('mousedown', (e) => {
+  e.preventDefault()
+  resizing = true
+  api.setOverlay(true) // hide the page so it doesn't swallow mouse moves
+  document.body.classList.add('resizing')
+  const startX = e.clientX
+  const startW = $('#apps-panel').getBoundingClientRect().width
+  let w = startW
+  const move = (ev) => {
+    w = clampW(startW + ev.clientX - startX)
+    document.documentElement.style.setProperty('--panel-w', w + 'px')
+  }
+  const up = () => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', up)
+    resizing = false
+    document.body.classList.remove('resizing')
+    api.setOverlay(false)
+    api.setSettings({ panelWidth: w })
+    reportBounds()
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', up)
+})
+$('#panel-resizer').addEventListener('dblclick', () => api.setSettings({ panelWidth: 230 }))
+
+function enableReorder(listSel, itemSel, onDone) {
+  const list = $(listSel)
+  list.addEventListener('dragstart', (e) => {
+    const item = e.target.closest(itemSel)
+    if (!item) return
+    dragging = { list: listSel, id: item.dataset.id }
+    item.classList.add('dragging')
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', item.dataset.id)
+  })
+  list.addEventListener('dragover', (e) => {
+    if (!dragging || dragging.list !== listSel) return
+    e.preventDefault()
+    const src = list.querySelector(`${itemSel}[data-id="${dragging.id}"]`)
+    const over = e.target.closest(itemSel)
+    if (!src || !over || over === src) return
+    const r = over.getBoundingClientRect()
+    const after = e.clientY > r.top + r.height / 2
+    list.insertBefore(src, after ? over.nextSibling : over)
+  })
+  const finish = () => {
+    if (!dragging || dragging.list !== listSel) return
+    const ids = [...list.querySelectorAll(itemSel)].map((el) => el.dataset.id)
+    list.querySelectorAll('.dragging').forEach((el) => el.classList.remove('dragging'))
+    dragging = null
+    onDone(ids)
+  }
+  list.addEventListener('drop', (e) => (e.preventDefault(), finish()))
+  list.addEventListener('dragend', finish)
+}
+enableReorder('#apps', '.app', (ids) => api.reorderApps(activeSpace().id, ids))
+enableReorder('#spaces', '.space', (ids) => api.reorderSpaces(ids))
 
 // ------------------------------------------------------------------ events
 

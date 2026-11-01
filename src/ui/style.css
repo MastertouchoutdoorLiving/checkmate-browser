@@ -170,3 +170,10 @@ browser-action-list::part(action):hover { background-color: var(--panel-hover); 
 .modal input[type=text], .modal textarea { background: #fff; border-color: #cfd4dc; }
 .catalog button, .check { border: 1px solid var(--border); background: var(--panel); }
 .space .dot { border-color: var(--rail); }
+/* resize handle between the apps panel and the page */
+#panel-resizer { width: 5px; margin-left: -3px; flex: none; cursor: col-resize; position: relative; z-index: 2; }
+#panel-resizer:hover, body.resizing #panel-resizer { background: var(--accent); opacity: .5; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
+body.apps-hidden #panel-resizer { display: none; }
+.app.dragging, .space.dragging { opacity: .4; }
+.app[draggable=true] { cursor: grab; }
