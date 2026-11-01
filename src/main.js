@@ -23,6 +23,9 @@ const {
 const { Store, CATALOG, COLORS } = require('./store')
 
 app.setName('MultiSpace Browser')
+// Hide Chromium's internal log noise (STUN lookups, Bluetooth/passkey probes) from the Terminal.
+// Real crashes are still reported.
+app.commandLine.appendSwitch('log-level', '3')
 
 let store
 let win
