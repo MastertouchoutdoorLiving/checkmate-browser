@@ -10,6 +10,7 @@ const { execFile } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { loadNicknames } = require('./nicknames')
 
 const HOME = os.homedir()
 const CHAT_DB = process.env.MULTISPACE_TEST_CHATDB || path.join(HOME, 'Library', 'Messages', 'chat.db')
@@ -103,10 +104,35 @@ async function loadContacts() {
   return map
 }
 
+const handleKey = (h) => (String(h).includes('@') ? String(h).toLowerCase() : phoneKey(h))
+let nicks = new Map()
+async function loadNames() {
+  const map = await loadContacts()
+  try {
+    nicks = await loadNicknames(sqlite, handleKey)
+  } catch {}
+  return map
+}
+// +19548045573 -> +1 (954) 804-5573
+function prettyHandle(h) {
+  const d = String(h || '').replace(/\D/g, '')
+  if (/^\+?1?\d{10}$/.test(String(h).replace(/[\s().\-]/g, '')) && (d.length === 10 || (d.length === 11 && d[0] === '1'))) {
+    const t = d.slice(-10)
+    return `+1 (${t.slice(0, 3)}) ${t.slice(3, 6)}-${t.slice(6)}`
+  }
+  return String(h || '')
+}
 function nameFor(handle, map) {
   if (!handle) return ''
   const h = String(handle)
-  return map.get(h.includes('@') ? h.toLowerCase() : phoneKey(h)) || h
+  return map.get(handleKey(h)) || prettyHandle(h)
+}
+// Contact name if saved; otherwise the name they shared with you ("Maybe: …"), flagged as maybe.
+function personFor(handle, map) {
+  const h = String(handle || '')
+  const saved = map.get(handleKey(h))
+  if (saved) return { handle: h, name: saved, maybe: '' }
+  return { handle: prettyHandle(h), name: prettyHandle(h), maybe: nicks.get(handleKey(h)) || '' }
 }
 
 // ---------------------------------------------------------------- queries
@@ -122,7 +148,7 @@ async function status() {
 }
 
 async function listChats(limit = 150) {
-  const map = await loadContacts()
+  const map = await loadNames()
   const rows = await sqlite(
     CHAT_DB,
     `SELECT c.ROWID AS id, c.guid AS guid, c.chat_identifier AS ident, c.display_name AS name, c.service_name AS service,
@@ -140,7 +166,9 @@ async function listChats(limit = 150) {
   )
   return rows.map((r) => {
     const members = String(r.members || '').split(',').filter(Boolean)
-    const title = r.name || (members.length ? members.map((h) => nameFor(h, map)).join(', ') : nameFor(r.ident, map))
+    const people = (members.length ? members : [r.ident]).map((h) => personFor(h, map))
+    const title = r.name || people.map((p) => (people.length > 1 && p.maybe ? p.maybe : p.name)).join(', ')
+    const maybe = !r.name && people.length === 1 ? people[0].maybe : ''
     const text = cleanText(r.text) || cleanText(decodeBody(r.body)) || 'Attachment'
     return {
       id: r.id,
@@ -152,14 +180,16 @@ async function listChats(limit = 150) {
       date: toMs(r.date),
       unread: r.unread || 0,
       lastFromMe: !!r.fromMe,
-      handle: members.length === 1 ? members[0] : r.ident,
-      members: members.map((h) => ({ handle: h, name: nameFor(h, map) })),
+      handle: prettyHandle(members.length === 1 ? members[0] : r.ident),
+      rawHandle: members.length === 1 ? members[0] : r.ident,
+      maybe,
+      members: members.map((h) => personFor(h, map)),
     }
   })
 }
 
 async function listMessages(chatId, limit = 300) {
-  const map = await loadContacts()
+  const map = await loadNames()
   const rows = await sqlite(
     CHAT_DB,
     `SELECT m.ROWID AS id, m.date AS date, m.text AS text, hex(m.attributedBody) AS body, m.is_from_me AS fromMe,
@@ -175,6 +205,7 @@ async function listMessages(chatId, limit = 300) {
     fromMe: !!r.fromMe,
     service: r.service,
     sender: r.fromMe ? 'You' : nameFor(r.sender, map),
+    senderMaybe: r.fromMe ? '' : personFor(r.sender, map).maybe,
     text: cleanText(r.text) || cleanText(decodeBody(r.body)),
     attachment: !!r.att,
   }))

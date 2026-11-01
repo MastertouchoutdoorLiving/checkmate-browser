@@ -60,11 +60,13 @@ function initials(t) {
 function avatar(name, cls = '', key = name) {
   return `<div class="avatar ${cls}" style="background:${colorFor(key)}">${esc(initials(name))}</div>`
 }
-const chatAvatar = (c, cls) => (c.group ? `<div class="avatar ${cls}" style="background:${colorFor(c.guid)}">${esc(groupInitials(c))}</div>` : avatar(c.title, cls, c.handle || c.guid))
+const chatAvatar = (c, cls) => (c.group ? `<div class="avatar ${cls}" style="background:${colorFor(c.guid)}">${esc(groupInitials(c))}</div>` : avatar(nameOf(c), cls, c.handle || c.guid))
 function groupInitials(c) {
-  const names = (c.members || []).map((m) => m.name).filter((n) => !isNumberish(n))
+  const names = (c.members || []).map((m) => m.maybe || m.name).filter((n) => !isNumberish(n))
   return names.length >= 2 ? [...names[0]][0].toUpperCase() + [...names[1]][0].toUpperCase() : initials(c.title)
 }
+const nameOf = (c) => c.maybe || c.title
+const maybeTag = (m) => (m ? '<span class="maybe" title="Name they shared with you. Not in your Contacts.">Maybe</span>' : '')
 const firstName = (t) => (isNumberish(t) ? t : String(t).split(/[\s,]+/)[0])
 
 function fmtTime(ms) {
@@ -143,17 +145,17 @@ function renderChats() {
       ? favs
           .map((c) => {
             const u = isUnread(c)
-            return `<div class="fav ${current && current.id === c.id ? 'active' : ''}" data-id="${c.id}" title="${esc(c.title)}">
+            return `<div class="fav ${current && current.id === c.id ? 'active' : ''}" data-id="${c.id}" title="${esc(nameOf(c))}">
               ${u ? `<div class="peek">${esc(c.last.replace(/^You: /, ''))}</div>` : ''}
               ${chatAvatar(c, '')}
               ${u ? '<span class="dot"></span>' : ''}
-              <div class="fname">${esc(c.group ? c.title : firstName(c.title))}</div></div>`
+              <div class="fname">${esc(c.group ? c.title : firstName(nameOf(c)))}</div></div>`
           })
           .join('')
       : ''
 
   const list = chats.filter((c) => {
-    if (q && !c.title.toLowerCase().includes(q) && !c.last.toLowerCase().includes(q)) return false
+    if (q && ![c.title, c.maybe, c.last].some((x) => String(x || '').toLowerCase().includes(q))) return false
     if (filter === 'unread') return isUnread(c)
     if (filter === 'read') return !isUnread(c)
     if (filter === 'fav') return isFav(c)
@@ -170,7 +172,7 @@ function renderChats() {
     const u = isUnread(c)
     html += `<div data-id="${c.id}" class="item ${current && current.id === c.id ? 'active' : ''} ${u ? 'is-unread' : ''}">
       ${chatAvatar(c, '')}
-      <div class="ci"><div class="row1"><span class="title">${isFav(c) ? '<span class="star">★</span>' : ''}${esc(c.title)}</span><span class="time">${esc(fmtTime(c.date))}</span></div>
+      <div class="ci"><div class="row1"><span class="title"><span class="tname">${isFav(c) ? '<span class="star">★</span>' : ''}${esc(nameOf(c))}</span>${maybeTag(c.maybe)}</span><span class="time">${esc(fmtTime(c.date))}</span></div>
       <div class="last">${esc(c.last)}</div></div>
       ${u ? '<span class="dot"></span>' : ''}
     </div>`
@@ -185,8 +187,8 @@ function renderChats() {
 const currentChat = () => current && current.id && chats.find((x) => x.id === current.id)
 
 function subtitleFor(c) {
-  if (c.group) return (c.members || []).map((m) => firstName(m.name)).join(', ')
-  const h = c.handle && c.handle !== c.title ? c.handle + ' · ' : ''
+  if (c.group) return (c.members || []).map((m) => (m.maybe ? 'Maybe: ' + m.maybe : firstName(m.name))).join(', ')
+  const h = c.handle && c.handle !== nameOf(c) ? c.handle + ' · ' : ''
   return h + (c.service === 'SMS' ? 'Text message' : 'iMessage')
 }
 
@@ -196,7 +198,7 @@ function renderHeader() {
   $('#head-avatar').hidden = !c
   if (!c) return
   $('#head-avatar').outerHTML = chatAvatar(c, 'lg').replace('<div class="avatar', '<div id="head-avatar" class="avatar')
-  $('#chat-title').textContent = c.title
+  $('#chat-title').innerHTML = esc(nameOf(c)) + maybeTag(c.maybe)
   $('#chat-sub').textContent = subtitleFor(c)
   const u = isUnread(c)
   $('#hdr-unread').title = u ? 'Mark as read' : 'Mark as unread'
@@ -214,12 +216,13 @@ function renderDetails() {
   const fav = isFav(c)
   const u = isUnread(c)
   const tag = c.group ? '<span class="tag group">Group</span>' : c.service === 'SMS' ? '<span class="tag sms">SMS</span>' : '<span class="tag">iMessage</span>'
-  const members = (c.members || []).length ? c.members : [{ handle: c.handle, name: c.title }]
+  const members = (c.members || []).length ? c.members : [{ handle: c.handle, name: c.title, maybe: c.maybe }]
   box.innerHTML = `
     <div class="d-top">
       ${chatAvatar(c, 'xl')}
-      <div class="d-title">${esc(c.title)}</div>
-      ${!c.group && c.handle && c.handle !== c.title ? `<div class="d-handle">${esc(c.handle)}</div>` : ''}
+      <div class="d-title">${esc(nameOf(c))}</div>
+      ${!c.group && c.handle && c.handle !== nameOf(c) ? `<div class="d-handle">${esc(c.handle)}</div>` : ''}
+      ${c.maybe ? '<div class="d-note">Name they shared with you. Not in your Contacts.</div>' : ''}
       ${tag}
     </div>
     <div class="d-quick">
@@ -231,7 +234,7 @@ function renderDetails() {
       <div class="d-label">${c.group ? `Members (${members.length})` : 'Contact'}</div>
       ${members
         .map(
-          (m) => `<div class="member">${avatar(m.name, 'sm', m.handle)}<div><div class="mn">${esc(m.name)}</div>${m.name !== m.handle ? `<div class="mh">${esc(m.handle || '')}</div>` : ''}</div></div>`
+          (m) => `<div class="member">${avatar(m.maybe || m.name, 'sm', m.handle)}<div><div class="mn">${m.maybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.maybe) : esc(m.name)}</div>${(m.maybe || m.name) !== m.handle ? `<div class="mh">${esc(m.handle || '')}</div>` : ''}</div></div>`
         )
         .join('')}
     </div>
@@ -247,7 +250,7 @@ function chatAction(c, a) {
   if (!c) return
   if (a === 'read') isUnread(c) ? markRead(c) : markUnread(c)
   if (a === 'fav') toggleFav(c)
-  if (a === 'open') window.imsg.openInMessages(c.group ? '' : c.handle)
+  if (a === 'open') window.imsg.openInMessages(c.group ? '' : c.rawHandle || c.handle)
   renderChats()
 }
 
@@ -273,7 +276,7 @@ async function loadMessages(chat, scroll = true) {
   if (scroll) markRead(chat) // opening a conversation reads it
   current = chat
   $('#to').hidden = true
-  $('#text').placeholder = `Message ${chat.group ? chat.title : firstName(chat.title)}…`
+  $('#text').placeholder = `Message ${chat.group ? chat.title : firstName(nameOf(chat))}…`
   let msgs
   try {
     msgs = await window.imsg.messages(chat.id)
@@ -303,9 +306,9 @@ async function loadMessages(chat, scroll = true) {
     const body = m.text ? linkify(m.text) : '<span class="att">📎 Photo or attachment (open in Messages to view)</span>'
     const time = new Date(m.date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     html += `<div class="row ${m.fromMe ? 'me' : 'them'} ${m.service === 'SMS' ? 'sms' : ''} ${first ? 'first' : ''} ${last ? 'last' : ''}">
-      ${m.fromMe ? '' : avatar(m.sender, 'sm', m.sender)}
+      ${m.fromMe ? '' : avatar(m.senderMaybe || m.sender, 'sm', m.sender)}
       <div class="bubble-wrap">
-        ${chat.group && !m.fromMe && first ? `<div class="sender" style="color:${colorFor(m.sender)}">${esc(m.sender)}</div>` : ''}
+        ${chat.group && !m.fromMe && first ? `<div class="sender" style="color:${colorFor(m.sender)}">${m.senderMaybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.senderMaybe) : esc(m.sender)}</div>` : ''}
         <div class="bubble" title="${esc(new Date(m.date).toLocaleString())}">${body}</div>
         ${last ? `<div class="meta">${esc(time)}${m.fromMe && m.service === 'SMS' ? ' · SMS' : ''}</div>` : ''}
       </div></div>`
