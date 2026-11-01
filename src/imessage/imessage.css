@@ -206,3 +206,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 #ctx button.danger, .d-action.danger { color: #d03b40; }
 .d-action.danger svg { color: #d03b40; }
 #toast button { margin-left: 10px; border: 0; background: none; color: #ffb59a; font-weight: 700; }
+.grid3 { display: grid; grid-template-columns: 1fr 64px 90px; gap: 10px; }
+.sheet-found { margin: -6px 0 12px; font-size: 12px; color: #3d7a30; background: #eef7ea; border: 1px solid #cfe6c9; border-radius: 10px; padding: 6px 10px; }
+.sheet input.found { background: #fffaf0; border-color: #f2c9a0; }
+.sheet { max-height: calc(100vh - 32px); overflow-y: auto; }

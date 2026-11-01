@@ -260,22 +260,24 @@ async function sendToHandle(handle, text) {
 async function addContact(c) {
   const v = (x) => String(x || '').trim().slice(0, 200)
   const first = v(c.first), last = v(c.last), company = v(c.company), phone = v(c.phone), email = v(c.email), note = String(c.note || '').trim().slice(0, 2000)
+  const street = v(c.street), city = v(c.city), state = v(c.state), zip = v(c.zip)
   if (!first && !last && !company) throw new Error('Enter a name or company')
   await osascript(
     [
       'on run argv',
-      'set {fn, ln, co, ph, em, nt} to argv',
+      'set {fn, ln, co, ph, em, nt, st, ci, sa, zp} to argv',
       'tell application "Contacts"',
       'set p to make new person with properties {first name:fn, last name:ln}',
       'if co is not "" then set organization of p to co',
       'if nt is not "" then set note of p to nt',
       'if ph is not "" then make new phone at end of phones of p with properties {label:"mobile", value:ph}',
       'if em is not "" then make new email at end of emails of p with properties {label:"work", value:em}',
+      'if st is not "" or ci is not "" or zp is not "" then make new address at end of addresses of p with properties {label:"home", street:st, city:ci, state:sa, zip:zp}',
       'save',
       'end tell',
       'end run',
     ],
-    [first, last, company, phone, email, note]
+    [first, last, company, phone, email, note, street, city, state, zip]
   )
   contacts = null // re-read names so the new contact shows right away
 }

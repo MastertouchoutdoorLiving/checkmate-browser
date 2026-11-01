@@ -86,6 +86,7 @@
     <form class="sheet" id="contact-form">
       <h2>New contact</h2>
       <p class="sheet-sub">Saved to your Contacts app (iCloud), so it shows on your iPhone too.</p>
+      <p class="sheet-found" id="contact-found" hidden></p>
       <div class="grid2">
         <label>First name<input name="first" autocomplete="off" /></label>
         <label>Last name<input name="last" autocomplete="off" /></label>
@@ -93,6 +94,12 @@
       <label>Company<input name="company" autocomplete="off" /></label>
       <label>Phone<input name="phone" autocomplete="off" /></label>
       <label>Email<input name="email" autocomplete="off" /></label>
+      <label>Street<input name="street" autocomplete="off" /></label>
+      <div class="grid3">
+        <label>City<input name="city" autocomplete="off" /></label>
+        <label>State<input name="state" autocomplete="off" /></label>
+        <label>ZIP<input name="zip" autocomplete="off" /></label>
+      </div>
       <label>Notes<textarea name="note" rows="2"></textarea></label>
       <div class="sheet-err" id="contact-err" hidden></div>
       <div class="sheet-actions">
@@ -101,6 +108,7 @@
       </div>
     </form>
   </div>
+  <script src="contact-parse.js"></script>
   <script src="imessage.js"></script>
 </body>
 </html>

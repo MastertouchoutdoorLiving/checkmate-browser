@@ -263,7 +263,7 @@ function renderDetails() {
       <div class="d-label">${c.group ? `Members (${members.length})` : 'Contact'}</div>
       ${members
         .map(
-          (m) => `<div class="member">${avatar(m.maybe || m.name, 'sm', m.handle)}<div><div class="mn">${m.maybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.maybe) : esc(m.name)}</div>${(m.maybe || m.name) !== m.handle ? `<div class="mh">${esc(m.handle || '')}</div>` : ''}</div>${c.group && m.saved === false ? `<button class="add-link" data-add="${esc(m.rawHandle || m.handle)}" data-maybe="${esc(m.maybe || '')}">Add</button>` : ''}</div>`
+          (m) => `<div class="member">${avatar(m.maybe || m.name, 'sm', m.handle)}<div><div class="mn">${m.maybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.maybe) : esc(m.name)}</div>${(m.maybe || m.name) !== m.handle ? `<div class="mh">${esc(m.handle || '')}</div>` : ''}</div>${c.group && m.saved === false ? `<button class="add-link" data-add="${esc(m.rawHandle || m.handle)}" data-maybe="${esc(m.maybe || '')}" data-sender="${esc(m.name)}">Add</button>` : ''}</div>`
         )
         .join('')}
     </div>
@@ -395,7 +395,7 @@ $('#hdr-info').addEventListener('click', () => {
 })
 $('#details').addEventListener('click', (e) => {
   const add = e.target.closest('[data-add]')
-  if (add) return openContactForm(add.dataset.add, add.dataset.maybe)
+  if (add) return openContactForm(add.dataset.add, add.dataset.maybe, add.dataset.sender)
   const a = e.target.closest('button[data-a]')?.dataset.a
   if (a) chatAction(currentChat(), a)
 })
@@ -449,20 +449,37 @@ $('#send-form').addEventListener('submit', async (e) => {
   }
 })
 // ---- add a contact (saved through the Contacts app, so it syncs to iCloud and your iPhone)
-function openContactForm(handle, maybe) {
+function openContactForm(handle, maybe, sender) {
   const f = $('#contact-form')
   f.reset()
+  f.querySelectorAll('.found').forEach((i) => i.classList.remove('found'))
   $('#contact-err').hidden = true
   const isEmail = /@/.test(handle || '')
+  // Read what they texted you (newest first). If you highlighted text in the chat, that wins.
+  const selected = String(window.getSelection() || '').trim()
+  const theirs = curMsgs.filter((m) => !m.fromMe && m.text && (!sender || m.sender === sender)).map((m) => m.text).reverse()
+  const found = window.contactParse.fromMessages(selected ? [selected, ...theirs] : theirs)
   const parts = String(maybe || '').trim().split(/\s+/).filter(Boolean)
-  f.first.value = parts[0] || ''
-  f.last.value = parts.slice(1).join(' ')
-  f.phone.value = isEmail ? '' : handle || ''
-  // an email address they sent you in this conversation, if any
-  const sent = curMsgs.filter((m) => !m.fromMe && m.text).map((m) => m.text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/)).find(Boolean)
-  f.email.value = isEmail ? handle : sent ? sent[0].replace(/\.$/, '') : ''
+  const set = (k, v, fromText) => {
+    if (!v) return
+    f[k].value = v
+    if (fromText) f[k].classList.add('found')
+  }
+  if (found.first) {
+    set('first', found.first, true)
+    set('last', found.last, true)
+  } else {
+    set('first', parts[0])
+    set('last', parts.slice(1).join(' '))
+  }
+  set('phone', isEmail ? '' : handle)
+  set('email', isEmail ? handle : found.email, !isEmail)
+  for (const k of ['street', 'city', 'state', 'zip']) set(k, found[k], true)
+  const got = ['name', 'email', 'street'].filter((k) => (k === 'name' ? found.first : found[k])).map((k) => (k === 'street' ? 'address' : k))
+  $('#contact-found').textContent = got.length ? `Filled in ${got.join(', ').replace(/, ([^,]*)$/, ' and $1')} from their messages. Check before saving.` : ''
+  $('#contact-found').hidden = !got.length
   $('#contact-modal').hidden = false
-  ;(f.first.value ? f.last.value ? f.company : f.last : f.first).focus()
+  ;(f.first.value ? (f.last.value ? f.company : f.last) : f.first).focus()
 }
 const closeContactForm = () => ($('#contact-modal').hidden = true)
 $('#contact-cancel').addEventListener('click', closeContactForm)
@@ -471,7 +488,7 @@ document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('#contact-m
 $('#contact-form').addEventListener('submit', async (e) => {
   e.preventDefault()
   const f = e.target
-  const data = Object.fromEntries(['first', 'last', 'company', 'phone', 'email', 'note'].map((k) => [k, f[k].value.trim()]))
+  const data = Object.fromEntries(['first', 'last', 'company', 'phone', 'email', 'street', 'city', 'state', 'zip', 'note'].map((k) => [k, f[k].value.trim()]))
   if (!data.first && !data.last && !data.company) {
     $('#contact-err').textContent = 'Enter a name or a company.'
     $('#contact-err').hidden = false
