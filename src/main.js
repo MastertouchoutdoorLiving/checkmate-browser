@@ -106,6 +106,9 @@ function getRuntime(spaceId) {
   else ses.setPreloads([...ses.getPreloads(), pagePreload.filePath])
   // chrome.sidePanel for extension pages; must be registered before the extension library's preload.
   if (ses.registerPreloadScript) ses.registerPreloadScript({ type: 'frame', id: 'multispace-sidepanel', filePath: path.join(__dirname, 'sidepanel-preload.js') })
+  ses.serviceWorkers.on('console-message', (_e, d) => {
+    if (String(d.sourceUrl || '').startsWith('chrome-extension://')) logExt('worker ' + (d.level ?? ''), `${d.message} (${String(d.sourceUrl).split('/').pop()}:${d.lineNumber})`)
+  })
   // Background workers reach the browser through a dummy address (see ext-shims/sidepanel-sw.js).
   ses.webRequest.onBeforeRequest({ urls: ['https://multispace-sidepanel.invalid/*'] }, (details, callback) => {
     try {
@@ -503,6 +506,12 @@ function activeTab() {
 
 // ---------------------------------------------------------------- extension side panel
 const SIDE_PANEL_WIDTH = 420
+const extLog = [] // recent extension messages, for "Copy Extension Error Log"
+function logExt(where, msg) {
+  const line = `${new Date().toISOString().slice(11, 19)} [${where}] ${String(msg).slice(0, 1500)}`
+  extLog.push(line)
+  if (extLog.length > 400) extLog.splice(0, extLog.length - 400)
+}
 let sidePanel = null // { view, spaceId, extId }
 
 function sidePanelConfig(spaceId, extId) {
@@ -549,6 +558,12 @@ function openSidePanel(spaceId, extId) {
     createTab(spaceId, { url })
     return { action: 'deny' }
   })
+  const pwc = view.webContents
+  pwc.on('console-message', (e) => logExt('panel ' + (e.level || ''), `${e.message} (${String(e.sourceId || '').split('/').pop()}:${e.lineNumber})`))
+  pwc.on('did-fail-load', (_e, code, desc, url) => logExt('panel', `load failed ${code} ${desc} ${url}`))
+  pwc.on('preload-error', (_e, p, err) => logExt('panel', `preload ${path.basename(p)}: ${err && err.message}`))
+  pwc.on('render-process-gone', (_e, d) => logExt('panel', `crashed: ${d.reason}`))
+  logExt('panel', `open ${extId} ${cfg.path}`)
   view.webContents.loadURL(`chrome-extension://${extId}/${cfg.path.replace(/^\//, '')}`).catch(() => {})
   layoutViews()
   return true
@@ -1217,6 +1232,15 @@ function buildAppMenu() {
         { label: 'Manage Extensions…', click: send('ui:extensions') },
         { label: 'Open Chrome Web Store', click: () => createTab(store.state.activeSpaceId, { url: 'https://chromewebstore.google.com/' }) },
         { label: 'Load Unpacked Extension…', click: loadUnpackedDialog },
+        { type: 'separator' },
+        {
+          label: 'Copy Extension Error Log',
+          click: () => {
+            clipboard.writeText(extLog.length ? extLog.join('\n') : '(no extension messages yet)')
+            dialog.showMessageBox(win, { message: 'Copied the extension log.', detail: 'Paste it (Cmd+V) in the chat with Claude.' })
+          },
+        },
+        { label: 'Inspect Side Panel', enabled: true, click: () => sidePanel && sidePanel.view.webContents.openDevTools({ mode: 'detach' }) },
       ],
     },
     { role: 'windowMenu' },
