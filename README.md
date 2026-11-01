@@ -20,6 +20,21 @@ It runs on Chromium (through Electron), so sites behave the way they do in Chrom
 - **Remembers everything** between launches: spaces, apps, open tabs, and logins.
 - **Open link in another space** from the right-click menu, so a link from one account can be opened while signed in as another.
 
+## Passwords
+
+- **Import your old passwords:** in Chrome or Shift go to Settings → Passwords (Google Password Manager) → Export passwords, which saves a `.csv` file. Then in this browser click the key icon at the bottom left (or **Passwords → Import Passwords**) and pick that file. You'll be offered to move the CSV to the Trash afterwards, since it isn't encrypted.
+- Logins fill in automatically on their sites, in every space. If a site has several saved accounts, click the username box to pick one.
+- When you sign in somewhere new, the browser offers to save the password.
+- Passwords are encrypted with your Mac's Keychain and never leave the computer.
+
+## iMessage (Mac only)
+
+Add **iMessage** from **+ Add app**. It shows your conversations and lets you reply, with unread badges like the other apps.
+
+- The first time, macOS needs to allow the browser to read your Messages history: System Settings → Privacy & Security → **Full Disk Access** → turn on **Terminal** (or **MultiSpace Browser** if you installed it as an app), then restart the browser.
+- The first time you send, macOS asks to let it control **Messages**. Click OK.
+- Photos and attachments show as "Attachment"; open them in the Messages app. Reading a message here doesn't mark it as read in Messages.
+
 ## Run it
 
 You need [Node.js](https://nodejs.org) 20 or newer.

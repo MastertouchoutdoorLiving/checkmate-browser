@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
+<title>Messages</title>
+<link rel="stylesheet" href="imessage.css" />
+</head>
+<body>
+  <div id="setup" hidden>
+    <div class="card">
+      <h1>Connect your Messages</h1>
+      <p>To show your iMessages and texts here, macOS needs to let the browser read your Messages history. This is a one-time step, and nothing leaves your Mac.</p>
+      <ol>
+        <li>Click <b>Open Privacy Settings</b> below.</li>
+        <li>Under <b>Full Disk Access</b>, turn on <b id="who">Terminal</b>. If it isn't listed, click <b>+</b> and add it from Applications (Terminal is in Applications → Utilities).</li>
+        <li>Quit the browser (Cmd+Q) and open it again.</li>
+      </ol>
+      <button id="open-privacy">Open Privacy Settings</button>
+      <p class="small" id="detail"></p>
+    </div>
+  </div>
+  <div id="app" hidden>
+    <aside>
+      <div class="side-top">
+        <input id="search" placeholder="Search" />
+        <button id="compose" title="New message">✎</button>
+      </div>
+      <ul id="chats"></ul>
+    </aside>
+    <main>
+      <header id="chat-title">Messages</header>
+      <div id="messages"><div class="empty">Pick a conversation</div></div>
+      <form id="send-form">
+        <input id="to" placeholder="To: phone number or email" hidden />
+        <textarea id="text" rows="1" placeholder="iMessage"></textarea>
+        <button id="send" type="submit">Send</button>
+      </form>
+      <div id="error" hidden></div>
+    </main>
+  </div>
+  <script src="imessage.js"></script>
+</body>
+</html>

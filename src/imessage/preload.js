@@ -1,0 +1,10 @@
+// Bridge for the built-in iMessage page.
+const { contextBridge, ipcRenderer } = require('electron')
+contextBridge.exposeInMainWorld('imsg', {
+  status: () => ipcRenderer.invoke('imsg:status'),
+  chats: () => ipcRenderer.invoke('imsg:chats'),
+  messages: (chatId) => ipcRenderer.invoke('imsg:messages', chatId),
+  sendToChat: (guid, text) => ipcRenderer.invoke('imsg:send-chat', guid, text),
+  sendToHandle: (handle, text) => ipcRenderer.invoke('imsg:send-handle', handle, text),
+  openPrivacySettings: () => ipcRenderer.send('imsg:open-privacy'),
+})

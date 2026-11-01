@@ -6,7 +6,14 @@ const crypto = require('crypto')
 const COLORS = ['#e8453c', '#4285f4', '#34a853', '#fbbc05', '#a142f4', '#f06292', '#00acc1', '#ff7043']
 
 // Built-in app catalog shown in the "Add app" picker.
+const IMESSAGE_ICON =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#34c759"/><path fill="#fff" d="M16 7c-5.5 0-10 3.6-10 8.1 0 2.6 1.5 4.9 3.8 6.4-.2 1.4-.9 2.7-2 3.6 2 .1 3.9-.6 5.3-1.8.9.2 1.9.3 2.9.3 5.5 0 10-3.6 10-8.1S21.5 7 16 7z"/></svg>'
+  )
+
 const CATALOG = [
+  { name: 'iMessage', url: 'internal:imessage', icon: IMESSAGE_ICON },
   { name: 'Gmail', url: 'https://mail.google.com/' },
   { name: 'Google Calendar', url: 'https://calendar.google.com/' },
   { name: 'Google Drive', url: 'https://drive.google.com/' },
@@ -112,10 +119,10 @@ class Store {
     this.save()
   }
 
-  addApp(spaceId, { name, url, subtitle }) {
+  addApp(spaceId, { name, url, subtitle, icon }) {
     const s = this.getSpace(spaceId)
     if (!s) return
-    const appEntry = { id: id(), name, url, subtitle: subtitle || '' }
+    const appEntry = { id: id(), name, url, subtitle: subtitle || '', ...(icon ? { icon } : {}) }
     s.apps.push(appEntry)
     this.save()
     return appEntry

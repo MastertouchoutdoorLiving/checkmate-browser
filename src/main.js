@@ -22,6 +22,11 @@ const {
 } = require('electron-chrome-web-store')
 const { Store, CATALOG, COLORS } = require('./store')
 const { PasswordVault } = require('./passwords')
+const imessage = require('./imessage')
+
+// Built-in pages that aren't websites.
+const IMESSAGE_URL = 'internal:imessage'
+const isInternal = (url) => url === IMESSAGE_URL
 
 app.setName('MultiSpace Browser')
 // Hide Chromium's internal log noise (STUN lookups, Bluetooth/passkey probes) from the Terminal.
@@ -58,6 +63,7 @@ function hostOf(url) {
 function normalizeUrl(input) {
   const text = (input || '').trim()
   if (!text) return 'about:blank'
+  if (isInternal(text)) return text
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text) || /^(about|chrome-extension|file):/i.test(text)) return text
   if (/^[^\s]+\.[^\s]{2,}(\/.*)?$/.test(text) || /^localhost(:\d+)?/.test(text)) return 'https://' + text
   return 'https://www.google.com/search?q=' + encodeURIComponent(text)
@@ -185,7 +191,7 @@ function activateSpace(spaceId) {
   layoutViews()
   const rt = runtimes.get(spaceId)
   const tab = rt && rt.tabs.get(rt.activeTabId)
-  if (tab) rt.extensions.selectTab(tab.view.webContents)
+  if (tab && !tab.internal) rt.extensions.selectTab(tab.view.webContents)
   pushState()
 }
 
@@ -200,14 +206,24 @@ function findTabByWebContents(wc) {
 
 function createTab(spaceId, { url, appId = null, select = true, persist = true } = {}) {
   const rt = getRuntime(spaceId)
+  const internal = isInternal(normalizeUrl(url))
   const view = new WebContentsView({
-    webPreferences: {
-      session: rt.session,
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-      scrollBounce: true,
-    },
+    webPreferences: internal
+      ? {
+          // Built-in iMessage page: its own session, no extensions, only the iMessage bridge.
+          partition: 'internal-pages',
+          preload: path.join(__dirname, 'imessage', 'preload.js'),
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+        }
+      : {
+          session: rt.session,
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+          scrollBounce: true,
+        },
   })
   const tab = {
     id: nextTabId++,
@@ -219,16 +235,18 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true }
     favicon: null,
     badge: 0,
     loading: false,
+    internal,
   }
   rt.tabs.set(tab.id, tab)
   rt.order.push(tab.id)
-  rt.extensions.addTab(view.webContents, win)
+  if (!internal) rt.extensions.addTab(view.webContents, win)
   wireTab(tab)
   win.contentView.addChildView(view)
   view.setVisible(false)
 
+  if (internal) view.webContents.loadFile(path.join(__dirname, 'imessage', 'index.html')).catch(() => {})
   // Wait until the space's extensions are loaded so content scripts run on the first page.
-  Promise.resolve(rt.ready).finally(() => view.webContents.loadURL(tab.url).catch(() => {}))
+  else Promise.resolve(rt.ready).finally(() => view.webContents.loadURL(tab.url).catch(() => {}))
 
   if (select) selectTab(spaceId, tab.id)
   else layoutViews()
@@ -253,11 +271,12 @@ function wireTab(tab) {
     pushState()
   })
   wc.on('did-navigate', (_e, url) => {
+    if (tab.internal) return
     tab.url = url
     update()
   })
   wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
-    if (isMainFrame) {
+    if (isMainFrame && !tab.internal) {
       tab.url = url
       update()
     }
@@ -285,6 +304,7 @@ function wireTab(tab) {
   // Links with target=_blank open as new tabs in the same space. Real popups (OAuth sign-in
   // windows, etc.) stay popups so the opener relationship keeps working.
   wc.setWindowOpenHandler(({ url, disposition }) => {
+    if (tab.internal) return { action: 'deny' }
     if (disposition === 'new-window') {
       return {
         action: 'allow',
@@ -316,7 +336,7 @@ function selectTab(spaceId, tabId) {
     store.state.activeSpaceId = spaceId
     store.save()
   }
-  rt.extensions.selectTab(rt.tabs.get(tabId).view.webContents)
+  if (!rt.tabs.get(tabId).internal) rt.extensions.selectTab(rt.tabs.get(tabId).view.webContents)
   layoutViews()
   persistTabs(spaceId)
   pushState()
@@ -333,7 +353,7 @@ function closeTab(spaceId, tabId) {
   tab.view.webContents.close()
   if (rt.activeTabId === tabId) {
     rt.activeTabId = rt.order[Math.min(idx, rt.order.length - 1)] ?? null
-    if (rt.activeTabId) rt.extensions.selectTab(rt.tabs.get(rt.activeTabId).view.webContents)
+    if (rt.activeTabId && !rt.tabs.get(rt.activeTabId).internal) rt.extensions.selectTab(rt.tabs.get(rt.activeTabId).view.webContents)
   }
   layoutViews()
   persistTabs(spaceId)
@@ -379,7 +399,7 @@ function snapshot() {
   return {
     activeSpaceId: s.activeSpaceId,
     settings: s.settings,
-    catalog: CATALOG,
+    catalog: CATALOG.filter((c) => !isInternal(c.url) || process.platform === 'darwin' || process.env.MULTISPACE_TEST_CHATDB),
     colors: COLORS,
     spaces: s.spaces.map((space) => {
       const rt = runtimes.get(space.id)
@@ -437,6 +457,21 @@ function updateBadgeCount() {
 // ---------------------------------------------------------------- IPC from the UI
 
 function registerIpc() {
+  // ---- iMessage (only the built-in iMessage page may call these)
+  const imsgOnly = (fn) => async (e, ...args) => {
+    const tab = findTabByWebContents(e.sender)
+    if (!tab || !tab.internal) throw new Error('Not allowed')
+    return fn(...args)
+  }
+  ipcMain.handle('imsg:status', imsgOnly(async () => ({ ...(await imessage.status()), packaged: app.isPackaged })))
+  ipcMain.handle('imsg:chats', imsgOnly(() => imessage.listChats()))
+  ipcMain.handle('imsg:messages', imsgOnly((id) => imessage.listMessages(id)))
+  ipcMain.handle('imsg:send-chat', imsgOnly((guid, text) => imessage.sendToChat(String(guid), String(text))))
+  ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))
+  ipcMain.on('imsg:open-privacy', (e) => {
+    if (findTabByWebContents(e.sender)?.internal) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')
+  })
+
   // ---- passwords
   // Only tabs (not the browser UI or other windows) can ask for logins, and only for the
   // frame's own real URL, which comes from the main process rather than from the page.
@@ -552,7 +587,8 @@ function registerIpc() {
 
   ipcMain.on('app:open', (_e, spaceId, appId) => openApp(spaceId, appId))
   ipcMain.on('app:add', (_e, spaceId, entry) => {
-    const a = store.addApp(spaceId, { name: entry.name, url: normalizeUrl(entry.url), subtitle: entry.subtitle })
+    const icon = typeof entry.icon === 'string' && entry.icon.startsWith('data:image/svg+xml') ? entry.icon : undefined
+    const a = store.addApp(spaceId, { name: entry.name, url: normalizeUrl(entry.url), subtitle: entry.subtitle, icon })
     if (!a) return
     // Saving the page you're on: turn the current tab into the app instead of opening a duplicate.
     const rt = runtimes.get(spaceId)

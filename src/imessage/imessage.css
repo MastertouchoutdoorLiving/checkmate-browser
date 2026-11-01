@@ -1,0 +1,41 @@
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1f2328; background: #fff; }
+[hidden] { display: none !important; }
+#setup { height: 100%; display: grid; place-items: center; background: #f6f7f9; }
+.card { max-width: 520px; background: #fff; border: 1px solid #dfe2e7; border-radius: 14px; padding: 28px 32px; }
+.card h1 { font-size: 20px; margin: 0 0 8px; }
+.card p, .card li { line-height: 1.55; color: #3b4048; }
+.card button, #send { background: #2f6fec; color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; cursor: pointer; }
+.small { font-size: 11px; color: #8a9099; word-break: break-all; }
+#app { display: flex; height: 100%; }
+aside { width: 300px; flex: none; border-right: 1px solid #e4e6ea; display: flex; flex-direction: column; background: #f6f7f9; }
+.side-top { display: flex; gap: 6px; padding: 12px; }
+#search { flex: 1; height: 32px; border-radius: 8px; border: 1px solid #dfe2e7; padding: 0 10px; font: inherit; outline: none; background: #fff; }
+#compose { width: 32px; height: 32px; border: 0; border-radius: 8px; background: #fff; border: 1px solid #dfe2e7; cursor: pointer; font-size: 15px; }
+#chats { list-style: none; margin: 0; padding: 0 6px 10px; overflow-y: auto; flex: 1; }
+#chats li { display: flex; gap: 10px; align-items: center; padding: 9px 8px; border-radius: 8px; cursor: pointer; }
+#chats li:hover { background: #eceef2; }
+#chats li.active { background: #2f6fec; color: #fff; }
+#chats li.active .last, #chats li.active .time { color: #dbe6ff; }
+.avatar { width: 38px; height: 38px; border-radius: 50%; background: linear-gradient(#a7adb8, #868c97); color: #fff; display: grid; place-items: center; font-weight: 600; flex: none; }
+.ci { flex: 1; min-width: 0; }
+.row1 { display: flex; gap: 6px; align-items: baseline; }
+.title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time { color: #8a9099; font-size: 11px; flex: none; }
+.last { color: #6b7280; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.unread-dot { width: 9px; height: 9px; border-radius: 50%; background: #2f6fec; flex: none; }
+main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+header { padding: 14px 18px; border-bottom: 1px solid #eceef2; font-weight: 600; font-size: 14px; }
+#messages { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 3px; }
+.empty { margin: auto; color: #8a9099; }
+.day { align-self: center; color: #8a9099; font-size: 11px; margin: 12px 0 6px; }
+.msg { max-width: 68%; padding: 7px 12px; border-radius: 18px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; user-select: text; }
+.msg.them { align-self: flex-start; background: #e9e9eb; }
+.msg.me { align-self: flex-end; background: #0b84ff; color: #fff; }
+.msg.me.sms { background: #34c759; }
+.sender { font-size: 11px; color: #8a9099; margin: 8px 0 1px 12px; }
+.att { font-style: italic; opacity: .8; }
+#send-form { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid #eceef2; align-items: flex-end; flex-wrap: wrap; }
+#to { width: 100%; height: 32px; border-radius: 8px; border: 1px solid #dfe2e7; padding: 0 10px; font: inherit; outline: none; }
+#text { flex: 1; resize: none; border-radius: 18px; border: 1px solid #dfe2e7; padding: 8px 14px; font: inherit; outline: none; max-height: 140px; }
+#error { background: #fff4f4; color: #b42318; padding: 8px 14px; font-size: 12px; }

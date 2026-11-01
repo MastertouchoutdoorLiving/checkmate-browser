@@ -351,7 +351,7 @@ function spaceModal(space) {
            ? ''
            : `<label>Start with these apps</label>
               <div class="catalog">${starters
-                .map((c, i) => `<label class="check"><input type="checkbox" name="app" value="${i}" ${i < 3 ? 'checked' : ''}/> <img src="${iconFor(c.url)}" alt="">${esc(c.name)}</label>`)
+                .map((c, i) => `<label class="check"><input type="checkbox" name="app" value="${i}" ${i < 3 ? 'checked' : ''}/> <img src="${esc(c.icon || iconFor(c.url))}" alt="">${esc(c.name)}</label>`)
                 .join('')}</div>
               <label>Add any other apps (one per line: name, then the link)</label>
               <textarea name="custom" rows="3" placeholder="JobTread, https://app.jobtread.com/jobs&#10;Schedulus, https://your-schedulus-link&#10;https://any-other-site.com"></textarea>
@@ -405,7 +405,7 @@ function addAppModal() {
   openModal(
     `<h3>Add an app to ${esc(space.name)}</h3>
      <div class="catalog">${state.catalog
-       .map((c, i) => `<button type="button" data-i="${i}"><img src="${iconFor(c.url)}" alt="">${esc(c.name)}</button>`)
+       .map((c, i) => `<button type="button" data-i="${i}"><img src="${esc(c.icon || iconFor(c.url))}" alt="">${esc(c.name)}</button>`)
        .join('')}</div>
      <div class="row">
        <button type="button" class="btn" data-x>Cancel</button>
@@ -415,7 +415,11 @@ function addAppModal() {
       m.querySelector('[data-x]').onclick = closeModal
       m.querySelector('[data-custom]').onclick = () => appModal(null)
       m.querySelectorAll('[data-i]').forEach((b) =>
-        b.addEventListener('click', () => appModal({ ...state.catalog[Number(b.dataset.i)], isNew: true }))
+        b.addEventListener('click', () => {
+          const c = state.catalog[Number(b.dataset.i)]
+          if (c.url.startsWith('internal:')) return api.addApp(space.id, c), closeModal()
+          appModal({ ...c, isNew: true })
+        })
       )
     }
   )
@@ -481,7 +485,7 @@ function appModal(existing, fromCurrent = false) {
         const name = f.name.value.trim() || hostOf(/^https?:/.test(url) ? url : 'https://' + url).replace(/^www\./, '')
         const subtitle = f.subtitle.value.trim()
         if (editing) api.updateApp(space.id, existing.id, { name, url, subtitle })
-        else api.addApp(space.id, { name, url, subtitle, fromCurrentTab: usedCurrent && cur && url === cur.url })
+        else api.addApp(space.id, { name, url, subtitle, icon: existing && existing.isNew ? existing.icon : undefined, fromCurrentTab: usedCurrent && cur && url === cur.url })
         closeModal()
       })
     }
