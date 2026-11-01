@@ -11,7 +11,9 @@ const {
   dialog,
   shell,
   clipboard,
+  net,
 } = require('electron')
+const { pathToFileURL } = require('url')
 const path = require('path')
 const fs = require('fs')
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
@@ -547,6 +549,13 @@ function registerIpc() {
     createTab(from.spaceId, { url })
     return true
   })
+  // Show an attachment's file in Finder (for files the page can't display).
+  ipcMain.on('imsg:reveal-attachment', async (e, id) => {
+    if (!findTabByWebContents(e.sender)?.internal) return
+    try {
+      shell.showItemInFolder(await imessage.attachmentPath(id))
+    } catch {}
+  })
   ipcMain.on('imsg:open-messages', (e, handle) => {
     if (!findTabByWebContents(e.sender)?.internal) return
     const h = String(handle || '').replace(/[^\w@.+\-]/g, '')
@@ -1031,6 +1040,18 @@ app.whenReady().then(() => {
   // Lets the extension toolbar in the browser UI show extension icons.
   ElectronChromeExtensions.handleCRXProtocol(session.defaultSession)
   registerIpc()
+  // Photos from your Messages, served only to the built-in iMessage page as imsg-att://file/<id>
+  imessage.setCacheDir(path.join(app.getPath('userData'), 'imessage-cache'))
+  session.fromPartition('internal-pages').protocol.handle('imsg-att', async (req) => {
+    try {
+      const id = Number(new URL(req.url).pathname.replace(/\D/g, ''))
+      const { file, mime } = await imessage.attachmentFile(id)
+      const res = await net.fetch(pathToFileURL(file).toString(), { headers: req.headers })
+      return new Response(res.body, { status: res.status, headers: { 'Content-Type': mime, 'Cache-Control': 'max-age=86400' } })
+    } catch {
+      return new Response('Not found', { status: 404 })
+    }
+  })
   buildAppMenu()
   createWindow()
   // Start every space's session in the background so extensions and notifications are ready.

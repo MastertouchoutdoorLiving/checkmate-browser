@@ -42,7 +42,7 @@ Add **iMessage** from **+ Add app**. It shows your conversations and lets you re
 
 - The first time, macOS needs to allow the browser to read your Messages history: System Settings → Privacy & Security → **Full Disk Access** → turn on **Terminal** (or **MultiSpace Browser** if you installed it as an app), then restart the browser.
 - The first time you send, macOS asks to let it control **Messages**. Click OK.
-- Photos and attachments show as "Attachment"; open them in the Messages app. Reading a message here doesn't mark it as read in Messages.
+- Photos and videos show right in the conversation (click a photo to see it large). iPhone HEIC photos are converted to JPEG on your Mac so they can be shown. Other files (PDFs etc.) show as a chip; click it to see the file in Finder. Reading a message here doesn't mark it as read in Messages.
 
 ## Run it
 

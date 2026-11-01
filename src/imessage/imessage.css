@@ -213,3 +213,15 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .sheet select { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px; font: inherit; color: var(--text); background: var(--bg); }
 .btn.primary.wa { background: #25a35a; border-color: #25a35a; }
 .btn.link { border: 0; background: none; color: #d03b40; padding-left: 0; }
+
+/* ---------- photos and files */
+.media { display: flex; flex-direction: column; gap: 4px; margin-bottom: 3px; }
+.row.me .media { align-items: flex-end; }
+.att-img { display: block; max-width: min(320px, 100%); max-height: 360px; border-radius: 16px; cursor: zoom-in; background: var(--them); object-fit: cover; }
+.att-video { display: block; max-width: min(360px, 100%); max-height: 360px; border-radius: 16px; background: #000; }
+.att-audio { display: block; width: 260px; }
+.att-file { border: 1px solid var(--line2); background: var(--card); border-radius: 14px; padding: 8px 12px; text-align: left; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-file small { color: var(--muted); margin-left: 6px; }
+#lightbox { position: fixed; inset: 0; z-index: 40; background: rgba(20, 16, 12, .82); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: zoom-out; padding: 24px; }
+#lightbox img { max-width: 100%; max-height: calc(100% - 60px); border-radius: 10px; box-shadow: 0 20px 60px rgba(0, 0, 0, .4); }
+#lightbox .btn { cursor: pointer; }

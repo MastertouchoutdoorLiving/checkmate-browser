@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: imsg-att:; media-src imsg-att:" />
 <title>Messages</title>
 <link rel="stylesheet" href="imessage.css" />
 </head>
@@ -105,6 +105,7 @@
       </div>
     </form>
   </div>
+  <div id="lightbox" hidden><img alt="" /><button id="lightbox-reveal" class="btn">Show in Finder</button></div>
   <div id="wa-modal" hidden>
     <form class="sheet" id="wa-form">
       <h2>Send to team on WhatsApp</h2>

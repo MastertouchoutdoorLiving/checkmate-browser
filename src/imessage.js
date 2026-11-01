@@ -200,6 +200,25 @@ async function listMessages(chatId, limit = 300) {
       WHERE j.chat_id = ${Number(chatId) | 0} AND m.item_type = 0 AND COALESCE(m.associated_message_type, 0) = 0
       ORDER BY m.date DESC LIMIT ${Number(limit) | 0}`
   )
+  // photos, videos and files attached to these messages
+  const withAtt = rows.filter((r) => r.att).map((r) => Number(r.id) | 0)
+  const atts = new Map()
+  if (withAtt.length) {
+    try {
+      const list = await sqlite(
+        CHAT_DB,
+        `SELECT j.message_id AS mid, a.ROWID AS id, a.mime_type AS mime, a.transfer_name AS name, a.filename AS file, a.total_bytes AS size
+           FROM message_attachment_join j JOIN attachment a ON a.ROWID = j.attachment_id
+          WHERE j.message_id IN (${withAtt.join(',')})`
+      )
+      for (const x of list) {
+        if (!atts.has(x.mid)) atts.set(x.mid, [])
+        const name = x.name || path.basename(String(x.file || ''))
+        if (/\.pluginPayloadAttachment$/i.test(name)) continue // link previews
+        atts.get(x.mid).push({ id: x.id, mime: x.mime || guessMime(name), name, size: x.size || 0 })
+      }
+    } catch {}
+  }
   return rows.reverse().map((r) => ({
     id: r.id,
     date: toMs(r.date),
@@ -209,7 +228,44 @@ async function listMessages(chatId, limit = 300) {
     senderMaybe: r.fromMe ? '' : personFor(r.sender, map).maybe,
     text: cleanText(r.text) || cleanText(decodeBody(r.body)),
     attachment: !!r.att,
+    attachments: atts.get(r.id) || [],
   }))
+}
+
+// ---------------------------------------------------------------- attachments
+const MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', webp: 'image/webp', tif: 'image/tiff', tiff: 'image/tiff', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', caf: 'audio/x-caf', m4a: 'audio/mp4', mp3: 'audio/mpeg', vcf: 'text/vcard' }
+const guessMime = (n) => MIME[String(n).split('.').pop().toLowerCase()] || 'application/octet-stream'
+const MESSAGES_DIR = path.dirname(CHAT_DB) // ~/Library/Messages: attachments are only ever read from here
+let cacheDir = path.join(os.tmpdir(), 'multispace-imsg')
+const setCacheDir = (d) => (cacheDir = d)
+
+// Returns { file, mime } ready to show in the browser. HEIC photos (iPhone) and TIFFs are converted
+// to JPEG once with macOS's built-in `sips`, because Chromium can't display them.
+async function attachmentFile(id) {
+  const rows = await sqlite(CHAT_DB, `SELECT filename AS file, mime_type AS mime, transfer_name AS name FROM attachment WHERE ROWID = ${Number(id) | 0}`)
+  if (!rows.length || !rows[0].file) throw new Error('Attachment not found')
+  const file = path.resolve(String(rows[0].file).replace(/^~(?=\/)/, HOME))
+  const real = fs.realpathSync(file)
+  if (!real.startsWith(fs.realpathSync(MESSAGES_DIR) + path.sep)) throw new Error('Not allowed')
+  const mime = rows[0].mime || guessMime(rows[0].name || file)
+  if (/^image\/(heic|heif|tiff)$/i.test(mime) || /\.(heic|heif|tiff?)$/i.test(file)) {
+    fs.mkdirSync(cacheDir, { recursive: true })
+    const out = path.join(cacheDir, `${Number(id) | 0}.jpg`)
+    if (!fs.existsSync(out)) {
+      await new Promise((resolve, reject) =>
+        execFile('/usr/bin/sips', ['-s', 'format', 'jpeg', '-Z', '2400', real, '--out', out], (err) => (err ? reject(err) : resolve()))
+      )
+    }
+    return { file: out, mime: 'image/jpeg' }
+  }
+  return { file: real, mime }
+}
+async function attachmentPath(id) {
+  const rows = await sqlite(CHAT_DB, `SELECT filename AS file FROM attachment WHERE ROWID = ${Number(id) | 0}`)
+  if (!rows.length || !rows[0].file) throw new Error('Attachment not found')
+  const real = fs.realpathSync(path.resolve(String(rows[0].file).replace(/^~(?=\/)/, HOME)))
+  if (!real.startsWith(fs.realpathSync(MESSAGES_DIR) + path.sep)) throw new Error('Not allowed')
+  return real
 }
 
 // ---------------------------------------------------------------- sending
@@ -283,4 +339,4 @@ async function addContact(c) {
   contacts = null // re-read names so the new contact shows right away
 }
 
-module.exports = { addContact, status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }
+module.exports = { attachmentFile, attachmentPath, setCacheDir, addContact, status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }

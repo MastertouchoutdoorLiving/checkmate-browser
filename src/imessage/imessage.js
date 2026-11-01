@@ -346,13 +346,16 @@ async function loadMessages(chat, scroll = true) {
     }
     const first = !prev || who(prev) !== who(m) || new Date(prev.date).toDateString() !== day || m.date - prev.date > 15 * 60e3
     const last = !next || who(next) !== who(m) || new Date(next.date).toDateString() !== day || next.date - m.date > 15 * 60e3
-    const body = m.text ? linkify(m.text) : '<span class="att">📎 Photo or attachment (open in Messages to view)</span>'
+    const atts = m.attachments || []
+    const media = atts.map(attachmentHtml).join('')
+    const body = m.text ? linkify(m.text) : atts.length ? '' : '<span class="att">📎 Attachment (open in Messages to view)</span>'
     const time = new Date(m.date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     html += `<div data-mid="${m.id}" class="row ${m.fromMe ? 'me' : 'them'} ${m.service === 'SMS' ? 'sms' : ''} ${first ? 'first' : ''} ${last ? 'last' : ''}">
       ${m.fromMe ? '' : avatar(m.senderMaybe || m.sender, 'sm', m.sender)}
       <div class="bubble-wrap">
         ${chat.group && !m.fromMe && first ? `<div class="sender" style="color:${colorFor(m.sender)}">${m.senderMaybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.senderMaybe) : esc(m.sender)}</div>` : ''}
-        <div class="bubble" title="${esc(new Date(m.date).toLocaleString())}">${body}</div>
+        ${media ? `<div class="media">${media}</div>` : ''}
+        ${body ? `<div class="bubble" title="${esc(new Date(m.date).toLocaleString())}">${body}</div>` : ''}
         ${last ? `<div class="meta">${esc(time)}${m.fromMe && m.service === 'SMS' ? ' · SMS' : ''}</div>` : ''}
       </div></div>`
   }
@@ -360,6 +363,40 @@ async function loadMessages(chat, scroll = true) {
   if (scroll || atBottom) box.scrollTop = box.scrollHeight
   renderChats()
 }
+
+// photos and videos show inline; other files show as a chip you can open in Finder
+function attachmentHtml(a) {
+  const src = `imsg-att://file/${Number(a.id)}`
+  if (/^image\//.test(a.mime)) return `<img class="att-img" src="${src}" data-att="${Number(a.id)}" alt="${esc(a.name)}" loading="lazy" />`
+  if (/^video\//.test(a.mime)) return `<video class="att-video" src="${src}" controls preload="metadata"></video>`
+  if (/^audio\//.test(a.mime)) return `<audio class="att-audio" src="${src}" controls preload="none"></audio>`
+  const kb = a.size ? (a.size > 1e6 ? (a.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(a.size / 1e3)) + ' KB') : ''
+  return `<button class="att-file" data-reveal="${Number(a.id)}">📎 <span>${esc(a.name || 'File')}</span>${kb ? ` <small>${kb}</small>` : ''}</button>`
+}
+$('#messages').addEventListener('click', (e) => {
+  const img = e.target.closest('img[data-att]')
+  if (img) {
+    $('#lightbox img').src = img.src
+    $('#lightbox').dataset.att = img.dataset.att
+    $('#lightbox').hidden = false
+    return
+  }
+  const f = e.target.closest('[data-reveal]')
+  if (f) window.imsg.revealAttachment(Number(f.dataset.reveal))
+})
+$('#lightbox').addEventListener('click', (e) => {
+  if (e.target.id === 'lightbox-reveal') return window.imsg.revealAttachment(Number($('#lightbox').dataset.att))
+  $('#lightbox').hidden = true
+})
+document.addEventListener('keydown', (e) => e.key === 'Escape' && ($('#lightbox').hidden = true))
+// a broken image (file not downloaded from iCloud yet, etc.) becomes a small note
+document.addEventListener(
+  'error',
+  (e) => {
+    if (e.target.matches?.('img.att-img')) e.target.outerHTML = '<div class="bubble"><span class="att">📷 Photo not on this Mac yet (open in Messages)</span></div>'
+  },
+  true
+)
 
 function showError(msg) {
   $('#error').textContent = msg
