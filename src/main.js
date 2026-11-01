@@ -492,6 +492,7 @@ function registerIpc() {
   ipcMain.handle('imsg:chats', imsgOnly(() => imessage.listChats()))
   ipcMain.handle('imsg:messages', imsgOnly((id) => imessage.listMessages(id)))
   ipcMain.handle('imsg:send-chat', imsgOnly((guid, text) => imessage.sendToChat(String(guid), String(text))))
+  ipcMain.handle('imsg:send-file', imsgOnly((target, name, bytes) => imessage.sendFile(target, name, bytes)))
   ipcMain.handle('imsg:contacts', imsgOnly(() => imessage.searchContacts()))
   ipcMain.handle('imsg:add-contact', imsgOnly((c) => imessage.addContact(c || {})))
   ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))

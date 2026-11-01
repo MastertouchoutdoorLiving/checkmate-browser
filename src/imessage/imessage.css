@@ -235,3 +235,13 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .to-item .tv { color: var(--muted); font-size: 12px; }
 .to-item .tk { margin-left: auto; font-size: 11px; color: var(--soft); }
 .to-empty { color: var(--muted); padding: 10px; font-size: 13px; }
+
+/* ---------- pictures waiting to be sent */
+#attach { width: 36px; height: 36px; border: 0; background: none; color: var(--muted); display: grid; place-items: center; flex: none; border-radius: 10px; }
+#attach:hover { color: var(--text); background: var(--hover); }
+.composer { padding-left: 6px; }
+#tray { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.tray-item { position: relative; width: 84px; height: 84px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line2); background: var(--card); display: grid; place-items: center; font-size: 11px; color: var(--muted); text-align: center; padding: 4px; }
+.tray-item img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.tray-item button { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(43, 38, 32, .75); color: #fff; font-size: 14px; line-height: 1; z-index: 1; }
+#convo.dragging::after { content: 'Drop to add to your message'; position: absolute; inset: 8px; border: 2px dashed var(--accent); border-radius: 18px; background: rgba(242, 107, 58, .06); display: grid; place-items: center; font-weight: 600; color: var(--accent); z-index: 8; pointer-events: none; }

@@ -316,6 +316,7 @@ document.addEventListener('mousedown', (e) => {
 
 async function loadMessages(chat, scroll = true) {
   if (scroll) markRead(chat) // opening a conversation reads it
+  if (scroll && current && current.id !== chat.id) clearTray()
   current = chat
   $('#to').hidden = true
   $('#to-list').hidden = true
@@ -477,22 +478,101 @@ $('#text').addEventListener('input', (e) => {
   e.target.style.height = 'auto'
   e.target.style.height = e.target.scrollHeight + 'px'
 })
+// ---- pictures and files to send (paste, drag and drop, or the paperclip)
+let pending = [] // [{ file, url }]
+function addFiles(files) {
+  for (const f of files) {
+    if (!f || !f.size) continue
+    if (f.size > 100 * 1024 * 1024) {
+      showError(`${f.name} is larger than 100 MB.`)
+      continue
+    }
+    pending.push({ file: f, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : '' })
+  }
+  renderTray()
+  $('#text').focus()
+}
+function renderTray() {
+  $('#tray').innerHTML = pending
+    .map((p, i) => `<div class="tray-item">${p.url ? `<img src="${p.url}" alt="" />` : `📎<br>${esc(p.file.name)}`}<button type="button" data-rm="${i}" title="Remove">×</button></div>`)
+    .join('')
+  $('#tray').hidden = !pending.length
+}
+function clearTray() {
+  pending.forEach((p) => p.url && URL.revokeObjectURL(p.url))
+  pending = []
+  renderTray()
+}
+$('#tray').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-rm]')
+  if (!b) return
+  const [p] = pending.splice(Number(b.dataset.rm), 1)
+  if (p && p.url) URL.revokeObjectURL(p.url)
+  renderTray()
+})
+$('#attach').addEventListener('click', () => $('#file-pick').click())
+$('#file-pick').addEventListener('change', (e) => {
+  addFiles([...e.target.files])
+  e.target.value = ''
+})
+document.addEventListener('paste', (e) => {
+  if (!current || !e.clipboardData) return
+  if (e.target.closest && e.target.closest('.sheet')) return // not while a form is open
+  const files = [...e.clipboardData.files]
+  if (!files.length) return
+  e.preventDefault()
+  addFiles(files.map((f, i) => (f.name && f.name !== 'image.png' ? f : new File([f], `pasted-${Date.now()}-${i}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type }))))
+})
+let dragDepth = 0
+$('#convo').addEventListener('dragenter', (e) => {
+  if (!current || ![...(e.dataTransfer?.types || [])].includes('Files')) return
+  dragDepth++
+  $('#convo').classList.add('dragging')
+})
+$('#convo').addEventListener('dragleave', () => {
+  if (--dragDepth <= 0) {
+    dragDepth = 0
+    $('#convo').classList.remove('dragging')
+  }
+})
+$('#convo').addEventListener('dragover', (e) => current && e.preventDefault())
+$('#convo').addEventListener('drop', (e) => {
+  e.preventDefault()
+  dragDepth = 0
+  $('#convo').classList.remove('dragging')
+  if (current) addFiles([...e.dataTransfer.files])
+})
+
 $('#send-form').addEventListener('submit', async (e) => {
   e.preventDefault()
   const text = $('#text').value.trim()
-  if (!text || !current) return
+  if ((!text && !pending.length) || !current) return
+  let target
+  if (current.compose) {
+    const to = toValue || $('#to').value.trim()
+    if (!to) return $('#to').focus()
+    target = { handle: to }
+  } else target = { guid: current.guid }
   $('#send').disabled = true
   try {
-    if (current.compose) {
-      const to = toValue || $('#to').value.trim()
-      if (!to) return $('#to').focus()
-      await window.imsg.sendToHandle(to, text)
-    } else await window.imsg.sendToChat(current.guid, text)
+    // pictures first, then the text (like on the iPhone)
+    while (pending.length) {
+      const p = pending[0]
+      await window.imsg.sendFile(target, p.file.name, new Uint8Array(await p.file.arrayBuffer()))
+      if (p.url) URL.revokeObjectURL(p.url)
+      pending.shift()
+      renderTray()
+    }
+    if (text) {
+      if (target.handle) await window.imsg.sendToHandle(target.handle, text)
+      else await window.imsg.sendToChat(target.guid, text)
+    }
     $('#text').value = ''
     $('#text').style.height = 'auto'
     setTimeout(refreshChats, 800)
+    setTimeout(refreshChats, 3000)
   } catch (err) {
-    showError('Could not send: ' + err.message + ' (Allow the browser to control Messages in System Settings → Privacy & Security → Automation.)')
+    showError('Could not send: ' + String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '') + ' (Allow the browser to control Messages in System Settings → Privacy & Security → Automation.)')
   } finally {
     $('#send').disabled = false
   }

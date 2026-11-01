@@ -291,6 +291,34 @@ function osascript(lines, args) {
   })
 }
 
+// Send a picture or file. Messages can only send files from places it's allowed to read, so we save a
+// copy in ~/Pictures/MultiSpace Browser first. `target` is { guid } for a conversation or { handle }.
+async function sendFile(target, name, bytes) {
+  const buf = Buffer.from(bytes)
+  if (!buf.length || buf.length > 100 * 1024 * 1024) throw new Error('File is empty or larger than 100 MB')
+  const safe = String(name || 'image.png').replace(/[^\w.\- ]+/g, '_').slice(-80) || 'image.png'
+  const dir = path.join(HOME, 'Pictures', 'MultiSpace Browser')
+  fs.mkdirSync(dir, { recursive: true })
+  const file = path.join(dir, `${Date.now()}-${safe}`)
+  fs.writeFileSync(file, buf)
+  if (target && target.guid) {
+    await osascript(['on run argv', 'set f to POSIX file (item 1 of argv)', 'tell application "Messages" to send f to chat id (item 2 of argv)', 'end run'], [file, String(target.guid)])
+  } else {
+    await osascript(
+      [
+        'on run argv',
+        'set f to POSIX file (item 1 of argv)',
+        'tell application "Messages"',
+        'set s to 1st account whose service type = iMessage',
+        'send f to participant (item 2 of argv) of s',
+        'end tell',
+        'end run',
+      ],
+      [file, String(target && target.handle)]
+    )
+  }
+}
+
 // Text and recipient are passed as arguments, never pasted into the script, so nothing in a message can run as code.
 async function sendToChat(guid, text) {
   await osascript(['on run argv', 'tell application "Messages" to send (item 1 of argv) to chat id (item 2 of argv)', 'end run'], [text, guid])
@@ -352,4 +380,4 @@ async function addContact(c) {
   contacts = null // re-read names so the new contact shows right away
 }
 
-module.exports = { searchContacts, attachmentFile, attachmentPath, setCacheDir, addContact, status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }
+module.exports = { sendFile, searchContacts, attachmentFile, attachmentPath, setCacheDir, addContact, status, listChats, listMessages, sendToChat, sendToHandle, decodeBody }
