@@ -238,16 +238,31 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     if (!main) return null
     const head = main.querySelector('header')
     const title = ((head && (head.querySelector('span[dir="auto"]') || head.querySelector('span[title]'))) || {}).textContent || ''
-    const rows = [...main.querySelectorAll('[data-id]')]
     let phone = ''
-    const incoming = []
-    for (const r of rows) {
-      const id = r.getAttribute('data-id') || ''
-      if (!id.startsWith('false_')) continue
-      const m = id.match(/^false_(\d{6,15})@c\.us/)
-      if (m && !phone) phone = m[1]
-      const txt = [...r.querySelectorAll('.selectable-text')].map((s) => s.innerText).join('\n').trim()
-      if (txt) incoming.push(txt)
+    for (const r of main.querySelectorAll('[data-id]')) {
+      const m = (r.getAttribute('data-id') || '').match(/^(?:false|true)_(\d{6,15})@c\.us/)
+      if (m) {
+        phone = m[1]
+        break
+      }
+    }
+    // Their messages: WhatsApp marks them "message-in" (older versions: data-id "false_…").
+    const textOf = (el) => {
+      const parts = [...el.querySelectorAll('[data-pre-plain-text], .selectable-text, .copyable-text')]
+      // keep only the outermost matches so text isn't counted twice
+      const outer = parts.filter((p) => !parts.some((q) => q !== p && q.contains(p)))
+      let t = outer.map((p) => p.innerText).join('\n').trim()
+      if (!t) t = el.innerText.replace(/\b\d{1,2}:\d{2}\s?(?:AM|PM)?\s*$/i, '').trim()
+      return t
+    }
+    let rows = [...main.querySelectorAll('.message-in')]
+    if (!rows.length) rows = [...main.querySelectorAll('[data-id^="false_"]')]
+    rows = rows.filter((r) => !rows.some((o) => o !== r && o.contains(r)))
+    const incoming = rows.map(textOf).filter(Boolean)
+    // Last resort: everything in the conversation.
+    if (!incoming.length) {
+      const pane = main.querySelector('[role="application"]') || main
+      incoming.push(...pane.innerText.split(/\n+/).map((x) => x.trim()).filter((x) => x && !/^\d{1,2}:\d{2}\s?(?:AM|PM)?$/i.test(x)))
     }
     const titleDigits = title.replace(/[^\d]/g, '')
     if (!phone && /^\+?[\d\s()-]{7,}$/.test(title.trim())) phone = titleDigits
