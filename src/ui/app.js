@@ -29,7 +29,7 @@ function render() {
   const space = activeSpace()
   if (!space) return
   document.body.classList.toggle('apps-hidden', !state.settings.appsPanelOpen)
-  if (!resizing) document.documentElement.style.setProperty('--panel-w', clampW(state.settings.panelWidth || 230) + 'px')
+  if (!resizing) setPanelWidth(clampW(state.settings.panelWidth || 230))
 
   // Spaces rail (not redrawn mid-drag, or the drag would be cancelled)
   if (!dragging) $('#spaces').innerHTML = state.spaces
@@ -51,7 +51,8 @@ function render() {
       const isActive = tab && tab.id === space.activeTabId
       const badge = tab ? (tab.badge > 0 ? badgeHtml(tab.badge) : tab.badge === -1 ? '<span class="open-dot" style="background:var(--badge)"></span>' : '<span class="open-dot"></span>') : ''
       return `
-        <li draggable="true" class="app ${isActive ? 'active' : ''}" data-id="${a.id}" title="${esc(a.url)}">
+        <li draggable="true" class="app ${isActive ? 'active' : ''}" data-id="${a.id}" title="${esc(a.name)}${a.subtitle ? ' · ' + esc(a.subtitle) : ''}
+${esc(a.url)}">
           <img src="${esc(tab && tab.favicon ? tab.favicon : a.icon || iconFor(a.url))}" alt="" />
           <span class="name"><span>${esc(a.name)}</span>${a.subtitle ? `<small>${esc(a.subtitle)}</small>` : ''}</span>
           ${badge}
@@ -116,7 +117,13 @@ window.addEventListener('resize', reportBounds)
 
 let resizing = false
 let dragging = null // { list: '#apps' | '#spaces', id }
-const clampW = (w) => Math.max(160, Math.min(480, Math.round(w)))
+// Narrower than ~140px snaps to icons-only mode (64px), like a compact dock.
+const COMPACT_W = 64
+const clampW = (w) => (w < 140 ? COMPACT_W : Math.min(480, Math.max(170, Math.round(w))))
+function setPanelWidth(w) {
+  document.documentElement.style.setProperty('--panel-w', w + 'px')
+  document.body.classList.toggle('apps-compact', w <= COMPACT_W)
+}
 
 $('#panel-resizer').addEventListener('mousedown', (e) => {
   e.preventDefault()
@@ -128,7 +135,7 @@ $('#panel-resizer').addEventListener('mousedown', (e) => {
   let w = startW
   const move = (ev) => {
     w = clampW(startW + ev.clientX - startX)
-    document.documentElement.style.setProperty('--panel-w', w + 'px')
+    setPanelWidth(w)
   }
   const up = () => {
     window.removeEventListener('mousemove', move)
@@ -259,6 +266,11 @@ function newTab() {
   api.newTab('https://www.google.com/')
   setTimeout(() => address.focus(), 50)
 }
+function toggleCompact() {
+  const w = state.settings.panelWidth || 230
+  if (w <= COMPACT_W) api.setSettings({ panelWidth: state.settings.lastFullWidth || 230 })
+  else api.setSettings({ panelWidth: COMPACT_W, lastFullWidth: w })
+}
 function toggleApps() {
   api.setSettings({ appsPanelOpen: !state.settings.appsPanelOpen })
 }
@@ -268,6 +280,7 @@ api.onCommand((cmd) => {
   if (cmd === 'ui:new-space') spaceModal(null)
   if (cmd === 'ui:focus-address') address.focus()
   if (cmd === 'ui:toggle-apps') toggleApps()
+  if (cmd === 'ui:toggle-compact') toggleCompact()
   if (cmd === 'ui:extensions') extensionsModal()
 })
 

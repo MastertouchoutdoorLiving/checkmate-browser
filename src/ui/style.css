@@ -177,3 +177,17 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 body.apps-hidden #panel-resizer { display: none; }
 .app.dragging, .space.dragging { opacity: .4; }
 .app[draggable=true] { cursor: grab; }
+/* mac: keep the window buttons clear of the space name */
+body.darwin #space-header { padding-left: 30px; }
+
+/* icons-only apps panel */
+body.apps-compact #space-header, body.apps-compact .section-label { display: none; }
+body.apps-compact #apps-panel { padding-top: 12px; }
+body.darwin.apps-compact #apps-panel { padding-top: 44px; }
+body.apps-compact #apps { padding: 0 6px; display: flex; flex-direction: column; gap: 4px; }
+body.apps-compact .app { position: relative; justify-content: center; padding: 10px 0; }
+body.apps-compact .app img { width: 26px; height: 26px; border-radius: 6px; }
+body.apps-compact .app .name, body.apps-compact .app .remove, body.apps-compact .app .open-dot { display: none; }
+body.apps-compact .app .badge { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; font-size: 10px; padding: 0 4px; }
+body.apps-compact .add-row { text-align: center; font-size: 20px; padding: 6px 0; }
+body.apps-compact .add-row .label { display: none; }

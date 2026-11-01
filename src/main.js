@@ -678,6 +678,7 @@ function buildAppMenu() {
       submenu: [
         { label: 'Reload Page', accelerator: 'CmdOrCtrl+R', click: () => activeTab()?.view.webContents.reload() },
         { label: 'Toggle Apps Panel', accelerator: 'CmdOrCtrl+B', click: send('ui:toggle-apps') },
+        { label: 'Apps Panel: Icons Only / Full', accelerator: 'CmdOrCtrl+Shift+B', click: send('ui:toggle-compact') },
         {
           label: 'Developer Tools (page)',
           accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',

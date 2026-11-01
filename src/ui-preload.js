@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('browser', {
   getState: () => ipcRenderer.invoke('get-state'),
   onState: on('state'),
   onCommand: (cb) => {
-    for (const c of ['ui:new-tab', 'ui:new-space', 'ui:focus-address', 'ui:toggle-apps', 'ui:extensions']) {
+    for (const c of ['ui:new-tab', 'ui:new-space', 'ui:focus-address', 'ui:toggle-apps', 'ui:toggle-compact', 'ui:extensions']) {
       ipcRenderer.on(c, () => cb(c))
     }
   },
