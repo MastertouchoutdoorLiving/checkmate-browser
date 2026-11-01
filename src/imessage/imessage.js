@@ -473,13 +473,9 @@ function openContactForm(handle, maybe, sender) {
     f[k].value = v
     if (fromText) f[k].classList.add('found')
   }
-  if (found.first) {
-    set('first', found.first, true)
-    set('last', found.last, true)
-  } else {
-    set('first', parts[0])
-    set('last', parts.slice(1).join(' '))
-  }
+  // The whole name goes in one field (saved as the first name), so it's easy to find later.
+  if (found.first) set('first', [found.first, found.last].filter(Boolean).join(' '), true)
+  else set('first', parts.join(' '))
   set('phone', isEmail ? '' : handle)
   set('email', isEmail ? handle : found.email, !isEmail)
   for (const k of ['street', 'city', 'state', 'zip']) set(k, found[k], true)
@@ -487,7 +483,7 @@ function openContactForm(handle, maybe, sender) {
   $('#contact-found').textContent = got.length ? `Filled in ${got.join(', ').replace(/, ([^,]*)$/, ' and $1')} from their messages. Check before saving.` : ''
   $('#contact-found').hidden = !got.length
   $('#contact-modal').hidden = false
-  ;(f.first.value ? (f.last.value ? f.company : f.last) : f.first).focus()
+  ;(f.first.value ? f.company : f.first).focus()
 }
 const closeContactForm = () => ($('#contact-modal').hidden = true)
 $('#contact-cancel').addEventListener('click', closeContactForm)
@@ -496,8 +492,9 @@ document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('#contact-m
 $('#contact-form').addEventListener('submit', async (e) => {
   e.preventDefault()
   const f = e.target
-  const data = Object.fromEntries(['first', 'last', 'company', 'phone', 'email', 'street', 'city', 'state', 'zip', 'note'].map((k) => [k, f[k].value.trim()]))
-  if (!data.first && !data.last && !data.company) {
+  const data = Object.fromEntries(['first', 'company', 'phone', 'email', 'street', 'city', 'state', 'zip', 'note'].map((k) => [k, f[k].value.trim()]))
+  data.last = ''
+  if (!data.first && !data.company) {
     $('#contact-err').textContent = 'Enter a name or a company.'
     $('#contact-err').hidden = false
     return f.first.focus()
