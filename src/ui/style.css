@@ -151,3 +151,8 @@ browser-action-list::part(action):hover { background-color: var(--panel-hover); 
 .ext-list .meta div:last-child { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .modal label.check { margin: 0; display: flex; color: var(--text); font-size: 13px; cursor: pointer; }
+.app .name { display: flex; flex-direction: column; min-width: 0; }
+.app .name span, .app .name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .name small { color: var(--muted); font-size: 11px; margin-top: 1px; }
+.modal a { color: var(--accent); }
+.btn:disabled { opacity: .4; cursor: default; }

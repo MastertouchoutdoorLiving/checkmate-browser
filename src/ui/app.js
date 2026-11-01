@@ -52,9 +52,9 @@ function render() {
       return `
         <li class="app ${isActive ? 'active' : ''}" data-id="${a.id}" title="${esc(a.url)}">
           <img src="${esc(tab && tab.favicon ? tab.favicon : iconFor(a.url))}" alt="" />
-          <span class="name">${esc(a.name)}</span>
+          <span class="name"><span>${esc(a.name)}</span>${a.subtitle ? `<small>${esc(a.subtitle)}</small>` : ''}</span>
           ${badge}
-          <button class="remove" data-remove="${a.id}" title="Remove app">×</button>
+          <button class="remove" data-edit="${a.id}" title="Edit app">✎</button>
         </li>`
     })
     .join('')
@@ -134,19 +134,23 @@ $('#space-name').addEventListener('dblclick', () => spaceModal(activeSpace()))
 
 $('#apps').addEventListener('click', (e) => {
   const space = activeSpace()
-  const rm = e.target.closest('[data-remove]')
-  if (rm) {
+  const ed = e.target.closest('[data-edit]')
+  if (ed) {
     e.stopPropagation()
-    const a = space.apps.find((x) => x.id === rm.dataset.remove)
-    confirmModal(`Remove ${a.name} from ${space.name}?`, 'You stay signed in; this only removes the shortcut.', 'Remove', () =>
-      api.removeApp(space.id, a.id)
-    )
-    return
+    return appModal(space.apps.find((x) => x.id === ed.dataset.edit))
   }
   const li = e.target.closest('.app')
   if (li) api.openApp(space.id, li.dataset.id)
 })
+$('#apps').addEventListener('contextmenu', (e) => {
+  const li = e.target.closest('.app')
+  if (li) {
+    e.preventDefault()
+    appModal(activeSpace().apps.find((x) => x.id === li.dataset.id))
+  }
+})
 $('#add-app').addEventListener('click', () => addAppModal())
+$('#pin-page').addEventListener('click', () => appModal(null, true))
 
 $('#tabs').addEventListener('click', (e) => {
   const space = activeSpace()
@@ -304,32 +308,91 @@ function addAppModal() {
      <div class="catalog">${state.catalog
        .map((c, i) => `<button type="button" data-i="${i}"><img src="${iconFor(c.url)}" alt="">${esc(c.name)}</button>`)
        .join('')}</div>
-     <form>
-       <label>Or add any website</label>
-       <input type="text" name="url" placeholder="https://app.example.com" />
-       <label>Name</label>
-       <input type="text" name="name" placeholder="Optional" />
-       <div class="row"><button type="button" class="btn" data-x>Cancel</button><button class="btn primary" type="submit">Add</button></div>
-     </form>`,
+     <div class="row">
+       <button type="button" class="btn" data-x>Cancel</button>
+       <button type="button" class="btn primary" data-custom>Add any website or page…</button>
+     </div>`,
     (m) => {
       m.querySelector('[data-x]').onclick = closeModal
+      m.querySelector('[data-custom]').onclick = () => appModal(null)
       m.querySelectorAll('[data-i]').forEach((b) =>
-        b.addEventListener('click', () => {
-          api.addApp(space.id, state.catalog[Number(b.dataset.i)])
-          closeModal()
-        })
+        b.addEventListener('click', () => appModal({ ...state.catalog[Number(b.dataset.i)], isNew: true }))
       )
-      m.querySelector('form').addEventListener('submit', (e) => {
+    }
+  )
+}
+
+// Add or edit an app. `existing` = app to edit; null = new custom app; {isNew:true,...} = new from catalog.
+// fromCurrent = prefill with the page currently open in this space.
+function appModal(existing, fromCurrent = false) {
+  const space = activeSpace()
+  const editing = existing && !existing.isNew
+  const cur = activeTab()
+  const curUsable = cur && /^https?:/.test(cur.url)
+  const start = editing || (existing && existing.isNew)
+    ? existing
+    : fromCurrent && curUsable
+      ? { name: cleanTitle(cur.title) || hostOf(cur.url).replace(/^www\./, ''), url: cur.url }
+      : { name: '', url: '' }
+  const idx = editing ? space.apps.findIndex((a) => a.id === existing.id) : -1
+  openModal(
+    `<h3>${editing ? 'Edit app' : 'Add app to ' + esc(space.name)}</h3>
+     <form>
+       <label>Name</label>
+       <input type="text" name="name" value="${esc(start.name)}" placeholder="e.g. JobTread" />
+       <label>Label (optional, shown under the name, e.g. which account)</label>
+       <input type="text" name="subtitle" value="${esc(start.subtitle || '')}" placeholder="e.g. Nilson Master Touch E-Mail" />
+       <label>Page it opens (paste the exact link, e.g. your JobTread jobs page or a specific Gmail inbox)</label>
+       <input type="text" name="url" value="${esc(start.url)}" placeholder="https://app.example.com/your/page" />
+       ${curUsable ? `<p class="hint">Or <a href="#" data-current>use the page open right now</a>: ${esc(cur.url.length > 70 ? cur.url.slice(0, 70) + '…' : cur.url)}</p>` : ''}
+       <div class="row">
+         ${editing
+           ? `<button type="button" class="btn danger left" data-del>Remove</button>
+              <button type="button" class="btn" data-up ${idx <= 0 ? 'disabled' : ''}>Move up</button>
+              <button type="button" class="btn" data-down ${idx >= space.apps.length - 1 ? 'disabled' : ''}>Move down</button>`
+           : ''}
+         <button type="button" class="btn" data-x>Cancel</button>
+         <button type="submit" class="btn primary">${editing ? 'Save' : 'Add app'}</button>
+       </div>
+     </form>`,
+    (m) => {
+      const f = m.querySelector('form')
+      let usedCurrent = fromCurrent && curUsable && !editing
+      m.querySelector('[data-x]').onclick = closeModal
+      const useCur = m.querySelector('[data-current]')
+      if (useCur)
+        useCur.onclick = (e) => {
+          e.preventDefault()
+          f.url.value = cur.url
+          if (!f.name.value) f.name.value = cleanTitle(cur.title)
+          usedCurrent = true
+        }
+      if (editing) {
+        m.querySelector('[data-del]').onclick = () =>
+          confirmModal(`Remove ${existing.name}?`, 'You stay signed in; this only removes the shortcut.', 'Remove', () =>
+            api.removeApp(space.id, existing.id)
+          )
+        m.querySelector('[data-up]').onclick = () => (api.moveApp(space.id, existing.id, -1), closeModal())
+        m.querySelector('[data-down]').onclick = () => (api.moveApp(space.id, existing.id, 1), closeModal())
+      }
+      f.addEventListener('submit', (e) => {
         e.preventDefault()
-        const fd = new FormData(e.target)
-        const url = (fd.get('url') || '').trim()
-        if (!url) return
-        const name = (fd.get('name') || '').trim() || hostOf(/^https?:/.test(url) ? url : 'https://' + url).replace(/^www\./, '')
-        api.addApp(space.id, { name, url })
+        const url = f.url.value.trim()
+        if (!url) return f.url.focus()
+        const name = f.name.value.trim() || hostOf(/^https?:/.test(url) ? url : 'https://' + url).replace(/^www\./, '')
+        const subtitle = f.subtitle.value.trim()
+        if (editing) api.updateApp(space.id, existing.id, { name, url, subtitle })
+        else api.addApp(space.id, { name, url, subtitle, fromCurrentTab: usedCurrent && cur && url === cur.url })
         closeModal()
       })
     }
   )
+}
+
+// "Inbox (37) - me@x.com - Gmail" -> "Gmail"-ish short name
+function cleanTitle(t) {
+  const parts = String(t || '').replace(/\(\d+\+?\)/g, '').split(/\s[-|–·]\s/).map((x) => x.trim()).filter(Boolean)
+  return (parts[parts.length - 1] || '').slice(0, 40)
 }
 
 async function extensionsModal() {

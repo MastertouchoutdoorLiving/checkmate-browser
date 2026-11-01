@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('browser', {
 
   openApp: (spaceId, appId) => ipcRenderer.send('app:open', spaceId, appId),
   addApp: (spaceId, entry) => ipcRenderer.send('app:add', spaceId, entry),
+  updateApp: (spaceId, appId, patch) => ipcRenderer.send('app:update', spaceId, appId, patch),
+  moveApp: (spaceId, appId, delta) => ipcRenderer.send('app:move', spaceId, appId, delta),
   removeApp: (spaceId, appId) => ipcRenderer.send('app:remove', spaceId, appId),
 
   newTab: (url) => ipcRenderer.send('tab:new', url),

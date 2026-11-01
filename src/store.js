@@ -21,6 +21,8 @@ const CATALOG = [
   { name: 'Instagram', url: 'https://www.instagram.com/' },
   { name: 'LinkedIn', url: 'https://www.linkedin.com/' },
   { name: 'X', url: 'https://x.com/' },
+  { name: 'JobTread', url: 'https://app.jobtread.com/' },
+  { name: 'Podium', url: 'https://app.podium.com/' },
   { name: 'Trello', url: 'https://trello.com/' },
   { name: 'Asana', url: 'https://app.asana.com/' },
   { name: 'Notion', url: 'https://www.notion.so/' },
@@ -110,13 +112,31 @@ class Store {
     this.save()
   }
 
-  addApp(spaceId, { name, url }) {
+  addApp(spaceId, { name, url, subtitle }) {
     const s = this.getSpace(spaceId)
     if (!s) return
-    const appEntry = { id: id(), name, url }
+    const appEntry = { id: id(), name, url, subtitle: subtitle || '' }
     s.apps.push(appEntry)
     this.save()
     return appEntry
+  }
+
+  updateApp(spaceId, appId, patch) {
+    const a = this.getSpace(spaceId)?.apps.find((x) => x.id === appId)
+    if (!a) return
+    for (const k of ['name', 'url', 'subtitle']) if (patch[k] != null) a[k] = patch[k]
+    this.save()
+    return a
+  }
+
+  moveApp(spaceId, appId, delta) {
+    const list = this.getSpace(spaceId)?.apps
+    if (!list) return
+    const i = list.findIndex((a) => a.id === appId)
+    const j = i + delta
+    if (i < 0 || j < 0 || j >= list.length) return
+    ;[list[i], list[j]] = [list[j], list[i]]
+    this.save()
   }
 
   removeApp(spaceId, appId) {

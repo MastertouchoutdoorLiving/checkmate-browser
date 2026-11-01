@@ -337,8 +337,12 @@ function openApp(spaceId, appId) {
   const rt = getRuntime(spaceId)
   if (store.state.activeSpaceId !== spaceId) activateSpace(spaceId)
   const existing = [...rt.tabs.values()].find((t) => t.appId === appId)
-  if (existing) selectTab(spaceId, existing.id)
-  else createTab(spaceId, { url: appEntry.url, appId })
+  if (!existing) return createTab(spaceId, { url: appEntry.url, appId })
+  // Clicking the app you're already on takes you back to its start page (like a Home button).
+  if (rt.activeTabId === existing.id && existing.url !== appEntry.url) {
+    existing.view.webContents.loadURL(appEntry.url).catch(() => {})
+  }
+  selectTab(spaceId, existing.id)
 }
 
 function activeTab() {
@@ -481,8 +485,29 @@ function registerIpc() {
 
   ipcMain.on('app:open', (_e, spaceId, appId) => openApp(spaceId, appId))
   ipcMain.on('app:add', (_e, spaceId, entry) => {
-    const a = store.addApp(spaceId, { name: entry.name, url: normalizeUrl(entry.url) })
-    if (a) openApp(spaceId, a.id)
+    const a = store.addApp(spaceId, { name: entry.name, url: normalizeUrl(entry.url), subtitle: entry.subtitle })
+    if (!a) return
+    // Saving the page you're on: turn the current tab into the app instead of opening a duplicate.
+    const rt = runtimes.get(spaceId)
+    const cur = rt && rt.tabs.get(rt.activeTabId)
+    if (entry.fromCurrentTab && cur && !cur.appId) {
+      cur.appId = a.id
+      persistTabs(spaceId)
+    } else openApp(spaceId, a.id)
+    pushState()
+  })
+  ipcMain.on('app:update', (_e, spaceId, appId, patch) => {
+    if (patch.url) patch.url = normalizeUrl(patch.url)
+    const before = store.getSpace(spaceId)?.apps.find((a) => a.id === appId)?.url
+    const a = store.updateApp(spaceId, appId, patch)
+    if (a && patch.url && patch.url !== before) {
+      const tab = [...(runtimes.get(spaceId)?.tabs.values() || [])].find((t) => t.appId === appId)
+      if (tab) tab.view.webContents.loadURL(a.url).catch(() => {})
+    }
+    pushState()
+  })
+  ipcMain.on('app:move', (_e, spaceId, appId, delta) => {
+    store.moveApp(spaceId, appId, delta)
     pushState()
   })
   ipcMain.on('app:remove', (_e, spaceId, appId) => {
