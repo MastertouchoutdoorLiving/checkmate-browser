@@ -463,7 +463,7 @@ async function extensionsModal() {
 // Broken favicon -> neutral placeholder.
 const FALLBACK_ICON =
   'data:image/svg+xml;utf8,' +
-  encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#5c5f66"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="#ddd" stroke-width="1.4"/></svg>')
+  encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="4" fill="#c9ced6"/><circle cx="8" cy="8" r="3.5" fill="none" stroke="#fff" stroke-width="1.4"/></svg>')
 document.addEventListener(
   'error',
   (e) => {

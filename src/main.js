@@ -720,7 +720,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 500,
     title: 'MultiSpace Browser',
-    backgroundColor: '#1e1f22',
+    backgroundColor: '#eceef2',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 24, y: 18 },
     webPreferences: {
