@@ -103,8 +103,22 @@ function getRuntime(spaceId) {
   const pagePreload = { type: 'frame', id: 'multispace-page', filePath: path.join(__dirname, 'page-preload.js') }
   if (ses.registerPreloadScript) ses.registerPreloadScript(pagePreload)
   else ses.setPreloads([...ses.getPreloads(), pagePreload.filePath])
+  // chrome.sidePanel for extension pages; must be registered before the extension library's preload.
+  if (ses.registerPreloadScript) ses.registerPreloadScript({ type: 'frame', id: 'multispace-sidepanel', filePath: path.join(__dirname, 'sidepanel-preload.js') })
+  // Background workers reach the browser through a dummy address (see ext-shims/sidepanel-sw.js).
+  ses.webRequest.onBeforeRequest({ urls: ['https://multispace-sidepanel.invalid/*'] }, (details, callback) => {
+    try {
+      const u = new URL(details.url)
+      const extId = u.searchParams.get('ext') || ''
+      const from = String(details.initiator || details.referrer || '')
+      if (/^[a-p]{32}$/.test(extId) && (!from || from.startsWith(`chrome-extension://${extId}`))) {
+        sidePanelOp(spaceId, extId, u.pathname.slice(1), JSON.parse(u.searchParams.get('arg') || '{}')).catch(() => {})
+      }
+    } catch {}
+    callback({ cancel: true })
+  })
 
-  const rt = { spaceId, session: ses, tabs: new Map(), order: [], activeTabId: null, restored: false }
+  const rt = { spaceId, session: ses, tabs: new Map(), order: [], activeTabId: null, restored: false, sidePanel: new Map() }
   runtimes.set(spaceId, rt)
 
   // Full chrome.* extension API support (tabs, action popups, context menus, etc.)
@@ -132,8 +146,28 @@ function getRuntime(spaceId) {
 
   rt.extensions.on('browser-action-popup-created', () => {})
 
+  // Extensions that live in a side panel (like Claude) open it when you click their icon.
+  try {
+    const ba = rt.extensions.api.browserAction
+    const origClick = ba.activateClick.bind(ba)
+    ba.activateClick = (details) => {
+      try {
+        const cfg = sidePanelConfig(spaceId, details.extensionId)
+        const at = ba.ctx.store.getActiveTabOfCurrentWindow()
+        const popup = at && ba.getPopupUrl(details.extensionId, at.id)
+        if (cfg.path && !popup) return toggleSidePanel(spaceId, details.extensionId)
+      } catch (err) {
+        console.error('side panel:', err)
+      }
+      return origClick(details)
+    }
+  } catch (err) {
+    console.error('side panel hook failed:', err)
+  }
+
   // Chrome Web Store: lets you click "Add to Chrome" on chromewebstore.google.com.
   // Extensions live in one shared folder and are loaded into every space.
+  patchAllSidePanelExtensions()
   rt.ready = installChromeWebStore({
     session: ses,
     extensionsPath: extensionsPath(),
@@ -145,6 +179,12 @@ function getRuntime(spaceId) {
 
   // When an extension is installed in one space, load it into the other open spaces too.
   exts(ses).on('extension-loaded', (_e, ext) => {
+    // Extensions with a side panel get a small helper in their background worker; reload once if we just added it.
+    if (patchSidePanelExtension(ext.path)) {
+      exts(ses).removeExtension(ext.id)
+      exts(ses).loadExtension(ext.path, { allowFileAccess: true }).catch(() => {})
+      return
+    }
     for (const other of runtimes.values()) {
       if (other === rt) continue
       const o = exts(other.session)
@@ -162,6 +202,59 @@ function getRuntime(spaceId) {
   })
 
   return rt
+}
+
+// ---------------------------------------------------------------- side panel helper for extension workers
+const SP_SHIM = '__multispace_sidepanel.js'
+const SP_WRAPPER = '__multispace_background.js'
+function patchSidePanelExtension(dir) {
+  // Only extensions installed from the Chrome Web Store (never your own unpacked folders).
+  if (!path.resolve(dir).startsWith(path.resolve(extensionsPath()) + path.sep)) return false
+  try {
+    const mf = path.join(dir, 'manifest.json')
+    const m = JSON.parse(fs.readFileSync(mf, 'utf8'))
+    const bg = m.background && m.background.service_worker
+    if (m.manifest_version !== 3 || !m.side_panel || !bg) return false
+    const shim = fs.readFileSync(path.join(__dirname, 'ext-shims', 'sidepanel-sw.js'), 'utf8')
+    const shimPath = path.join(dir, SP_SHIM)
+    let changed = !fs.existsSync(shimPath) || fs.readFileSync(shimPath, 'utf8') !== shim
+    if (changed) fs.writeFileSync(shimPath, shim)
+    if (bg !== SP_WRAPPER) {
+      const orig = String(bg).replace(/^\//, '')
+      const wrapper =
+        m.background.type === 'module'
+          ? `import './${SP_SHIM}'\nimport './${orig.replace(/'/g, "\\'")}'\n`
+          : `importScripts('/${SP_SHIM}', '/${orig.replace(/'/g, "\\'")}')\n`
+      fs.writeFileSync(path.join(dir, SP_WRAPPER), wrapper)
+      m.background.service_worker = SP_WRAPPER
+      fs.writeFileSync(mf, JSON.stringify(m, null, 2))
+      changed = true
+    }
+    return changed
+  } catch (err) {
+    console.error('[side panel patch]', dir, err.message)
+    return false
+  }
+}
+function patchAllSidePanelExtensions() {
+  const dirs = []
+  const walk = (d, depth) => {
+    if (depth > 2) return
+    let entries = []
+    try {
+      entries = fs.readdirSync(d, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue
+      const p = path.join(d, e.name)
+      if (fs.existsSync(path.join(p, 'manifest.json'))) dirs.push(p)
+      else walk(p, depth + 1)
+    }
+  }
+  walk(extensionsPath(), 0)
+  dirs.forEach((d) => patchSidePanelExtension(d))
 }
 
 function loadUnpacked(ses) {
@@ -406,13 +499,97 @@ function activeTab() {
   return rt ? rt.tabs.get(rt.activeTabId) : null
 }
 
+// ---------------------------------------------------------------- extension side panel
+const SIDE_PANEL_WIDTH = 420
+let sidePanel = null // { view, spaceId, extId }
+
+function sidePanelConfig(spaceId, extId) {
+  const rt = getRuntime(spaceId)
+  const ext = rt.session.extensions ? rt.session.extensions.getExtension(extId) : rt.session.getExtension(extId)
+  const saved = rt.sidePanel.get(extId) || {}
+  const manifestPath = ext && ext.manifest && ext.manifest.side_panel && ext.manifest.side_panel.default_path
+  return { path: saved.path || manifestPath || '', openOnClick: saved.openOnClick, enabled: saved.enabled !== false, ext }
+}
+
+function closeSidePanel() {
+  if (!sidePanel) return
+  const { view } = sidePanel
+  sidePanel = null
+  try {
+    win.contentView.removeChildView(view)
+    view.webContents.close()
+  } catch {}
+  layoutViews()
+}
+
+function openSidePanel(spaceId, extId) {
+  const cfg = sidePanelConfig(spaceId, extId)
+  if (!cfg.path || !win) return false
+  if (sidePanel && sidePanel.spaceId === spaceId && sidePanel.extId === extId) return true
+  closeSidePanel()
+  const rt = getRuntime(spaceId)
+  const view = new WebContentsView({ webPreferences: { session: rt.session, sandbox: true, contextIsolation: true, nodeIntegration: false } })
+  sidePanel = { view, spaceId, extId }
+  win.contentView.addChildView(view)
+  // Links the panel opens go to a normal tab.
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    createTab(spaceId, { url })
+    return { action: 'deny' }
+  })
+  view.webContents.loadURL(`chrome-extension://${extId}/${cfg.path.replace(/^\//, '')}`).catch(() => {})
+  layoutViews()
+  return true
+}
+
+function toggleSidePanel(spaceId, extId) {
+  if (sidePanel && sidePanel.spaceId === spaceId && sidePanel.extId === extId) closeSidePanel()
+  else openSidePanel(spaceId, extId)
+}
+
+async function sidePanelOp(spaceId, extId, op, arg) {
+  const rt = getRuntime(spaceId)
+  const saved = rt.sidePanel.get(extId) || {}
+  arg = arg || {}
+  switch (op) {
+    case 'open':
+      openSidePanel(store.state.activeSpaceId === spaceId ? spaceId : spaceId, extId)
+      return
+    case 'close':
+      if (sidePanel && sidePanel.extId === extId) closeSidePanel()
+      return
+    case 'setOptions':
+      if (!arg.tabId) {
+        if (typeof arg.path === 'string') saved.path = arg.path
+        if (typeof arg.enabled === 'boolean') saved.enabled = arg.enabled
+      }
+      rt.sidePanel.set(extId, saved)
+      return
+    case 'getOptions': {
+      const cfg = sidePanelConfig(spaceId, extId)
+      return { path: cfg.path, enabled: cfg.enabled }
+    }
+    case 'setPanelBehavior':
+      if (typeof arg.openPanelOnActionClick === 'boolean') saved.openOnClick = arg.openPanelOnActionClick
+      rt.sidePanel.set(extId, saved)
+      return
+    case 'getPanelBehavior':
+      return { openPanelOnActionClick: saved.openOnClick === true }
+  }
+}
+
 function layoutViews() {
   if (!win) return
   const active = activeTab()
+  const panelShown = !!sidePanel && sidePanel.spaceId === store.state.activeSpaceId && !overlayOpen
+  const panelW = Math.min(SIDE_PANEL_WIDTH, Math.round(contentBounds.width * 0.5))
+  if (sidePanel) {
+    if (panelShown) sidePanel.view.setBounds({ x: contentBounds.x + contentBounds.width - panelW, y: contentBounds.y, width: panelW, height: contentBounds.height })
+    sidePanel.view.setVisible(panelShown)
+  }
   for (const rt of runtimes.values()) {
     for (const tab of rt.tabs.values()) {
       const show = tab === active && !overlayOpen
-      if (show) tab.view.setBounds(contentBounds)
+      if (show) tab.view.setBounds(panelShown ? { ...contentBounds, width: Math.max(0, contentBounds.width - panelW) } : contentBounds)
       tab.view.setVisible(show)
     }
   }
@@ -629,6 +806,11 @@ function registerIpc() {
   ipcMain.handle('pw:import', importPasswordsDialog)
 
   ipcMain.handle('get-state', () => snapshot())
+  ipcMain.handle('ms-sidepanel', (e, extId, op, arg) => {
+    const rt = [...runtimes.values()].find((r) => r.session === e.sender.session)
+    if (!rt || !String(e.sender.getURL()).startsWith(`chrome-extension://${extId}/`)) throw new Error('Not allowed')
+    return sidePanelOp(rt.spaceId, extId, op, arg)
+  })
   ipcMain.on('content-bounds', (_e, b) => {
     contentBounds = {
       x: Math.round(b.x),
