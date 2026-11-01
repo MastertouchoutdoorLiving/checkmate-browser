@@ -93,7 +93,7 @@ Chrome extension support comes from two open-source (MIT) libraries:
 ## Known limits
 
 - **Not every extension will work.** Content-script extensions (ad blockers, Dark Reader, Grammarly-style helpers, password managers' autofill) generally work well. Extensions that need Chrome-only services such as `chrome.identity` (Google account sign-in inside the extension), Chrome Sync, or side panels may be partly or fully broken. Test the ones you rely on.
-- **Google sign-in.** The browser identifies itself as regular Chrome so Google accounts can sign in. If Google ever shows "This browser or app may not be secure", sign in via a popup from another Google page (for example Drive), or let us know and we'll add a workaround.
+- **Google sign-in.** Google blocks sign-in from browsers it thinks are "embedded apps" ("Couldn't sign you in. This browser or app may not be secure"). To avoid that, on Google's sign-in pages only, this browser presents itself as Firefox, which Google accepts; everywhere else it's Chrome. If Google still refuses, wait a few minutes and try again, or sign in from a different Google page (for example Drive).
 - **No Chrome Sync or Google password manager.** Use a password-manager extension instead (Bitwarden, 1Password, LastPass).
 - Not code-signed yet, and there is no auto-update of the app itself yet.
 

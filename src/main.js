@@ -52,6 +52,18 @@ function chromeUserAgent(ua) {
     .replace(/\s?multispace-browser\/[\d.]+/i, '')
 }
 
+// Google refuses sign-in from browsers it thinks are "embedded apps" ("Couldn't sign you in /
+// This browser or app may not be secure"). On Google's sign-in pages only, we present as Firefox,
+// which Google accepts, and drop the Chrome-only "client hint" headers that would give it away.
+// The same trick is used by other multi-account browsers (Ferdium, Rambox). page-preload.js does
+// the matching change inside the page.
+function firefoxUserAgent() {
+  const version = 128 + Math.floor((Date.now() - Date.UTC(2024, 6, 9)) / (28 * 864e5)) // a release every 4 weeks
+  const os = process.platform === 'darwin' ? 'Macintosh; Intel Mac OS X 10.15' : process.platform === 'win32' ? 'Windows NT 10.0; Win64; x64' : 'X11; Linux x86_64'
+  return `Mozilla/5.0 (${os}; rv:${version}.0) Gecko/20100101 Firefox/${version}.0`
+}
+const GOOGLE_SIGNIN_URLS = ['*://accounts.google.com/*', '*://accounts.youtube.com/*', '*://myaccount.google.com/*']
+
 function hostOf(url) {
   try {
     return new URL(normalizeUrl(url)).hostname.replace(/^www\./, '')
@@ -78,6 +90,12 @@ function getRuntime(spaceId) {
 
   const ses = session.fromPartition(`persist:space-${spaceId}`)
   ses.setUserAgent(chromeUserAgent(ses.getUserAgent()))
+  ses.webRequest.onBeforeSendHeaders({ urls: GOOGLE_SIGNIN_URLS }, (details, callback) => {
+    const h = details.requestHeaders
+    for (const k of Object.keys(h)) if (/^sec-ch-ua/i.test(k) || /^user-agent$/i.test(k)) delete h[k]
+    h['User-Agent'] = firefoxUserAgent()
+    callback({ requestHeaders: h })
+  })
   // Turn off passkeys so Google etc. offer password sign-in instead of hanging.
   const pagePreload = { type: 'frame', id: 'multispace-page', filePath: path.join(__dirname, 'page-preload.js') }
   if (ses.registerPreloadScript) ses.registerPreloadScript(pagePreload)

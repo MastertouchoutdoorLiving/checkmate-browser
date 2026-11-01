@@ -25,6 +25,37 @@ const hidePasskeys = () => {
 if (contextBridge.executeInMainWorld) contextBridge.executeInMainWorld({ func: hidePasskeys })
 else webFrame.executeJavaScript(`(${hidePasskeys.toString()})()`)
 
+// On Google's sign-in pages, look like Firefox inside the page too (matches the request headers set
+// in main.js), so Google doesn't block sign-in as "This browser or app may not be secure".
+const GOOGLE_SIGNIN_HOSTS = ['accounts.google.com', 'accounts.youtube.com', 'myaccount.google.com']
+if (GOOGLE_SIGNIN_HOSTS.includes(location.hostname)) {
+  const version = 128 + Math.floor((Date.now() - Date.UTC(2024, 6, 9)) / (28 * 864e5))
+  const mac = process.platform === 'darwin'
+  const win = process.platform === 'win32'
+  const ua = `Mozilla/5.0 (${mac ? 'Macintosh; Intel Mac OS X 10.15' : win ? 'Windows NT 10.0; Win64; x64' : 'X11; Linux x86_64'}; rv:${version}.0) Gecko/20100101 Firefox/${version}.0`
+  const lookLikeFirefox = (ua, platform, appVersion, oscpu) => {
+    const nav = Object.getPrototypeOf(navigator)
+    const def = (k, v) => {
+      try {
+        Object.defineProperty(nav, k, { get: () => v, configurable: true })
+      } catch {}
+    }
+    def('userAgent', ua)
+    def('appVersion', appVersion)
+    def('vendor', '')
+    def('platform', platform)
+    def('userAgentData', undefined)
+    def('oscpu', oscpu)
+  }
+  const args = mac
+    ? [ua, 'MacIntel', '5.0 (Macintosh)', 'Intel Mac OS X 10.15']
+    : win
+      ? [ua, 'Win32', '5.0 (Windows)', 'Windows NT 10.0; Win64; x64']
+      : [ua, 'Linux x86_64', '5.0 (X11)', 'Linux x86_64']
+  if (contextBridge.executeInMainWorld) contextBridge.executeInMainWorld({ func: lookLikeFirefox, args })
+  else webFrame.executeJavaScript(`(${lookLikeFirefox.toString()})(...${JSON.stringify(args)})`)
+}
+
 // ---------------------------------------------------------------- password autofill
 // Runs in an isolated world: the page can't see this code or call into it.
 const { ipcRenderer } = require('electron')
