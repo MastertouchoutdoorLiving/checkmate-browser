@@ -17,7 +17,7 @@ It runs on Chromium (through Electron), so sites behave the way they do in Chrom
   - Extension toolbar buttons and popups show at the right end of the address bar, and extension right-click menu items appear in the page context menu.
   - Extensions are installed once and loaded into every space. Each space keeps its own extension data, just like separate Chrome profiles.
   - Installed Web Store extensions auto-update at startup and every 5 hours.
-- **Remembers everything** between launches: spaces, apps, open tabs, and logins.
+- **Remembers everything** between launches: spaces, apps, open tabs, and logins. Logins are written to disk every 30 seconds and again when you quit (even from Ctrl+C or closing the Terminal window), so WhatsApp Web and similar sites stay signed in. Opening the browser a second time just brings the open window forward, because two copies can't share the saved logins.
 - **Open link in another space** from the right-click menu, so a link from one account can be opened while signed in as another.
 
 ## Passwords

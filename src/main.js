@@ -270,6 +270,11 @@ function wireTab(tab) {
     tab.loading = false
     pushState()
   })
+  // If a page's process crashes or runs out of memory, bring it back instead of leaving a dead tab.
+  wc.on('render-process-gone', (_e, details) => {
+    if (details.reason === 'clean-exit' || quitting) return
+    setTimeout(() => !wc.isDestroyed() && wc.reload(), 1000)
+  })
   wc.on('did-navigate', (_e, url) => {
     if (tab.internal) return
     tab.url = url
@@ -909,6 +914,50 @@ function createWindow() {
   win.webContents.once('did-finish-load', () => activateSpace(store.state.activeSpaceId))
 }
 
+// ---------------------------------------------------------------- keeping logins (WhatsApp etc.)
+// Only one copy of the browser may use the saved profile at a time. A second copy (for example
+// running `npm start` again while it's already open) can't open the login storage and makes sites
+// like WhatsApp Web think you're signed out. So a second launch just focuses the open window.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0)
+} else {
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+    }
+  })
+}
+
+// Write cookies, IndexedDB and localStorage to disk now, not "eventually".
+// WhatsApp Web keeps its login keys in IndexedDB; if the browser is killed before they are
+// written (closing the Terminal window, Ctrl+C, a crash, the Mac restarting), it logs out.
+async function flushAllSessions() {
+  const jobs = []
+  for (const rt of runtimes.values()) {
+    try {
+      rt.session.flushStorageData()
+    } catch {}
+    jobs.push(rt.session.cookies.flushStore().catch(() => {}))
+  }
+  await Promise.race([Promise.all(jobs), new Promise((r) => setTimeout(r, 3000))])
+}
+setInterval(() => flushAllSessions(), 30 * 1000).unref?.()
+
+let quitting = false
+function quitGracefully() {
+  if (quitting) return
+  quitting = true
+  try {
+    for (const rt of runtimes.values()) persistTabs(rt.spaceId)
+    store && store.saveNow()
+  } catch {}
+  flushAllSessions().finally(() => app.exit(0))
+}
+// Ctrl+C or closing the Terminal window: save everything before exiting.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, quitGracefully)
+
 app.whenReady().then(() => {
   store = new Store(app.getPath('userData'))
   vault = new PasswordVault(app.getPath('userData'))
@@ -921,8 +970,9 @@ app.whenReady().then(() => {
   store.state.spaces.forEach((s) => getRuntime(s.id))
 })
 
-app.on('before-quit', () => {
-  for (const rt of runtimes.values()) persistTabs(rt.spaceId)
-  store && store.saveNow()
+app.on('before-quit', (e) => {
+  if (quitting) return
+  e.preventDefault() // finish writing logins to disk first, then quit
+  quitGracefully()
 })
 app.on('window-all-closed', () => app.quit())
