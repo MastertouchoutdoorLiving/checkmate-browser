@@ -485,6 +485,7 @@ function registerIpc() {
         readUpTo: p.readUpTo && typeof p.readUpTo === 'object' ? p.readUpTo : {},
         manualUnread: p.manualUnread && typeof p.manualUnread === 'object' ? p.manualUnread : {},
         hidden: p.hidden && typeof p.hidden === 'object' ? p.hidden : {},
+        team: Array.isArray(p.team) ? p.team.slice(0, 100).map((t) => ({ name: String(t?.name || '').slice(0, 80), phone: String(t?.phone || '').slice(0, 40) })).filter((t) => t.name) : [],
       }
       store.save()
       return true
@@ -495,6 +496,38 @@ function registerIpc() {
     const tab = findTabByWebContents(e.sender)
     if (!tab || !tab.internal || !/^https?:\/\//i.test(String(url))) return
     createTab(tab.spaceId, { url: String(url) })
+  })
+  // Forward a text to a teammate on WhatsApp: opens your WhatsApp Web chat with them, message typed in.
+  // You still press Enter yourself. Without a phone (e.g. a group) the text is copied to paste.
+  ipcMain.handle('imsg:whatsapp', (e, phone, text) => {
+    const from = findTabByWebContents(e.sender)
+    if (!from || !from.internal) return false
+    const digits = String(phone || '').replace(/\D/g, '')
+    const msg = String(text || '').slice(0, 4000)
+    if (!digits) clipboard.writeText(msg)
+    const url = digits ? `https://web.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(msg)}` : 'https://web.whatsapp.com/'
+    const isWa = (u) => /^https:\/\/web\.whatsapp\.com\//.test(u || '')
+    const spaces = [from.spaceId, ...store.state.spaces.map((x) => x.id).filter((id) => id !== from.spaceId)]
+    for (const sid of spaces) {
+      const rt = runtimes.get(sid)
+      const tab = rt && [...rt.tabs.values()].find((t) => isWa(t.url))
+      if (tab) {
+        if (store.state.activeSpaceId !== sid) activateSpace(sid)
+        selectTab(sid, tab.id)
+        if (digits) tab.view.webContents.loadURL(url).catch(() => {})
+        return true
+      }
+    }
+    for (const sid of spaces) {
+      const a = store.getSpace(sid)?.apps.find((x) => isWa(x.url))
+      if (a) {
+        if (store.state.activeSpaceId !== sid) activateSpace(sid)
+        createTab(sid, { url, appId: a.id })
+        return true
+      }
+    }
+    createTab(from.spaceId, { url })
+    return true
   })
   ipcMain.on('imsg:open-messages', (e, handle) => {
     if (!findTabByWebContents(e.sender)?.internal) return

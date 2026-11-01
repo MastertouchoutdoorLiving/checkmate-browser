@@ -6,7 +6,7 @@ let current = null // chat object, or { compose: true }
 let lastSig = ''
 let filter = 'all'
 let curMsgs = []
-let prefs = { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} }
+let prefs = { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {}, team: [] }
 let showDetails = (() => {
   try {
     const v = localStorage.getItem('imsg-details')
@@ -22,6 +22,7 @@ const ICON = {
   open: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>',
   addPerson: '<svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5M19 8v6M16 11h6"/></svg>',
   trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a1 1 0 001 1h8a1 1 0 001-1l1-12M9 7V4h6v3"/></svg>',
+  team: '<svg viewBox="0 0 24 24"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 19z"/><path d="M9 10h6M9 13h4"/></svg>',
   bubble: '<svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>',
 }
 
@@ -133,6 +134,7 @@ async function boot() {
   try {
     prefs = { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {}, ...(await window.imsg.prefs()) }
     prefs.hidden = prefs.hidden || {}
+    prefs.team = prefs.team || []
   } catch {}
   await refreshChats()
   setInterval(refreshChats, 5000)
@@ -271,6 +273,7 @@ function renderDetails() {
       <div class="d-label">Actions</div>
       <button class="d-action" data-a="read">${ICON.unread}${u ? 'Mark as read' : 'Mark as unread'}</button>
       <button class="d-action" data-a="fav">${ICON.star}${fav ? 'Remove from Favorites' : 'Add to Favorites'}</button>
+      <button class="d-action" data-a="team">${ICON.team}Send to team on WhatsApp</button>
       <button class="d-action" data-a="open">${ICON.open}Open in Messages app</button>
       <button class="d-action danger" data-a="delete">${ICON.trash}Delete conversation</button>
     </div>`
@@ -283,6 +286,10 @@ function chatAction(c, a) {
   if (a === 'open') window.imsg.openInMessages(c.group ? '' : c.rawHandle || c.handle)
   if (a === 'add') return openContactForm(c.rawHandle || c.handle, c.maybe)
   if (a === 'delete') return hideChat(c)
+  if (a === 'team') {
+    const last = c.id === currentChat()?.id ? [...curMsgs].reverse().find((m) => !m.fromMe && m.text) : null
+    return openWaForm(c, last || { text: c.last.replace(/^You: /, '') })
+  }
   renderChats()
 }
 
@@ -291,6 +298,7 @@ function showContextMenu(c, x, y) {
   m.innerHTML = `<button data-a="read">${isUnread(c) ? 'Mark as read' : 'Mark as unread'}</button>
     <button data-a="fav">${isFav(c) ? 'Remove from Favorites' : 'Add to Favorites'}</button>
     ${!c.group && c.saved === false ? '<button data-a="add">Add to Contacts…</button>' : ''}
+    <button data-a="team">Send to team on WhatsApp…</button>
     <button data-a="open">Open in Messages app</button>
     <button data-a="delete" class="danger">Delete conversation</button>`
   m.style.left = Math.min(x, innerWidth - 200) + 'px'
@@ -340,7 +348,7 @@ async function loadMessages(chat, scroll = true) {
     const last = !next || who(next) !== who(m) || new Date(next.date).toDateString() !== day || next.date - m.date > 15 * 60e3
     const body = m.text ? linkify(m.text) : '<span class="att">📎 Photo or attachment (open in Messages to view)</span>'
     const time = new Date(m.date).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    html += `<div class="row ${m.fromMe ? 'me' : 'them'} ${m.service === 'SMS' ? 'sms' : ''} ${first ? 'first' : ''} ${last ? 'last' : ''}">
+    html += `<div data-mid="${m.id}" class="row ${m.fromMe ? 'me' : 'them'} ${m.service === 'SMS' ? 'sms' : ''} ${first ? 'first' : ''} ${last ? 'last' : ''}">
       ${m.fromMe ? '' : avatar(m.senderMaybe || m.sender, 'sm', m.sender)}
       <div class="bubble-wrap">
         ${chat.group && !m.fromMe && first ? `<div class="sender" style="color:${colorFor(m.sender)}">${m.senderMaybe ? '<span class="maybe-pre">Maybe:</span> ' + esc(m.senderMaybe) : esc(m.sender)}</div>` : ''}
@@ -631,6 +639,106 @@ $('#chats').addEventListener(
 )
 document.addEventListener('mousedown', (e) => {
   if (swOpen && !e.target.closest('.swipe')) closeSwipe(null)
+})
+
+// ---- send a text to a teammate on WhatsApp
+function teamOptions(selected) {
+  return (
+    prefs.team.map((t, i) => `<option value="${i}" ${i === selected ? 'selected' : ''}>${esc(t.name)}${t.phone ? ' · ' + esc(t.phone) : ''}</option>`).join('') +
+    '<option value="new">+ Add a teammate…</option><option value="paste">A group or someone else (copy and paste)</option>'
+  )
+}
+function openWaForm(chat, msg) {
+  const f = $('#wa-form')
+  f.reset()
+  $('#wa-err').hidden = true
+  const who = nameOf(chat) + (chat.handle && chat.handle !== nameOf(chat) ? ` (${chat.handle})` : '')
+  const body = msg && msg.text ? msg.text : ''
+  f.text.value = `Message from ${who}:\n"${body}"\n\n`
+  let last = -1
+  try {
+    last = Number(localStorage.getItem('wa-last') ?? -1)
+  } catch {}
+  const sel = prefs.team[last] ? last : prefs.team.length ? 0 : -1
+  $('#wa-to').innerHTML = teamOptions(sel)
+  if (sel < 0) $('#wa-to').value = 'new'
+  syncWaTo()
+  $('#wa-modal').hidden = false
+  ;($('#wa-to').value === 'new' ? f.name : f.text).focus()
+  f.text.setSelectionRange(f.text.value.length, f.text.value.length)
+}
+function syncWaTo() {
+  const v = $('#wa-to').value
+  $('#wa-new').hidden = v !== 'new'
+  $('#wa-remove').hidden = !/^\d+$/.test(v)
+}
+const closeWa = () => ($('#wa-modal').hidden = true)
+$('#wa-to').addEventListener('change', () => {
+  syncWaTo()
+  if ($('#wa-to').value === 'new') $('#wa-form').name.focus()
+})
+$('#wa-cancel').addEventListener('click', closeWa)
+$('#wa-modal').addEventListener('mousedown', (e) => e.target.id === 'wa-modal' && closeWa())
+document.addEventListener('keydown', (e) => e.key === 'Escape' && !$('#wa-modal').hidden && closeWa())
+$('#wa-remove').addEventListener('click', () => {
+  prefs.team.splice(Number($('#wa-to').value), 1)
+  savePrefs()
+  $('#wa-to').innerHTML = teamOptions(prefs.team.length ? 0 : -1)
+  if (!prefs.team.length) $('#wa-to').value = 'new'
+  syncWaTo()
+})
+const withCountry = (p) => {
+  const d = String(p || '').replace(/\D/g, '')
+  return d.length === 10 ? '+1' + d : p // US number without country code
+}
+$('#wa-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const f = e.target
+  const err = (m) => {
+    $('#wa-err').textContent = m
+    $('#wa-err').hidden = false
+  }
+  let v = $('#wa-to').value
+  let phone = ''
+  if (v === 'new') {
+    const name = f.name.value.trim()
+    phone = withCountry(f.phone.value.trim())
+    if (!name) return err('Enter the teammate’s name.')
+    if (phone.replace(/\D/g, '').length < 10) return err('Enter their WhatsApp number with area code.')
+    prefs.team.push({ name, phone })
+    savePrefs()
+    v = String(prefs.team.length - 1)
+  }
+  if (/^\d+$/.test(v)) {
+    phone = withCountry(prefs.team[Number(v)].phone)
+    try {
+      localStorage.setItem('wa-last', v)
+    } catch {}
+  }
+  await window.imsg.whatsapp(phone, f.text.value.trim())
+  closeWa()
+  if (!phone) toast('Message copied. Pick the chat in WhatsApp and paste (Cmd+V).')
+})
+// right-click a message bubble
+$('#messages').addEventListener('contextmenu', (e) => {
+  const row = e.target.closest('.row[data-mid]')
+  const c = currentChat()
+  if (!row || !c || String(window.getSelection() || '').trim()) return // keep the normal copy menu when text is selected
+  const m = curMsgs.find((x) => String(x.id) === row.dataset.mid)
+  if (!m) return
+  e.preventDefault()
+  const menu = $('#ctx')
+  menu.innerHTML = `<button data-a="wa">Send to team on WhatsApp…</button><button data-a="copy">Copy message</button>${!m.fromMe && c.saved === false && !c.group ? '<button data-a="add">Add to Contacts…</button>' : ''}`
+  menu.style.left = Math.min(e.clientX, innerWidth - 220) + 'px'
+  menu.style.top = Math.min(e.clientY, innerHeight - 110) + 'px'
+  menu.hidden = false
+  menu.onclick = (ev) => {
+    const a = ev.target.closest('button')?.dataset.a
+    menu.hidden = true
+    if (a === 'wa') openWaForm(c, m)
+    if (a === 'copy') navigator.clipboard.writeText(m.text || '').then(() => toast('Copied'), () => {})
+    if (a === 'add') chatAction(c, 'add')
+  }
 })
 
 $('#open-privacy').addEventListener('click', () => window.imsg.openPrivacySettings())

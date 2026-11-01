@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('imsg', {
   prefs: () => ipcRenderer.invoke('imsg:prefs'),
   setPrefs: (p) => ipcRenderer.invoke('imsg:set-prefs', p),
   addContact: (c) => ipcRenderer.invoke('imsg:add-contact', c),
+  whatsapp: (phone, text) => ipcRenderer.invoke('imsg:whatsapp', phone, text),
   openUrl: (url) => ipcRenderer.send('imsg:open-url', url),
   openInMessages: (handle) => ipcRenderer.send('imsg:open-messages', handle),
   openPrivacySettings: () => ipcRenderer.send('imsg:open-privacy'),

@@ -178,7 +178,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .item .maybe { flex: none; }
 
 /* ---------- add contact */
-#contact-modal { position: fixed; inset: 0; background: rgba(43, 38, 32, .28); display: grid; place-items: center; z-index: 20; padding: 16px; }
+#contact-modal, #wa-modal { position: fixed; inset: 0; background: rgba(43, 38, 32, .28); display: grid; place-items: center; z-index: 20; padding: 16px; }
 .sheet { width: 420px; max-width: 100%; background: var(--card); border-radius: 18px; padding: 22px 24px; box-shadow: 0 20px 60px rgba(60, 40, 20, .25); }
 .sheet h2 { margin: 0; font-size: 18px; }
 .sheet-sub { margin: 4px 0 14px; color: var(--muted); font-size: 12px; }
@@ -210,3 +210,6 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .sheet-found { margin: -6px 0 12px; font-size: 12px; color: #3d7a30; background: #eef7ea; border: 1px solid #cfe6c9; border-radius: 10px; padding: 6px 10px; }
 .sheet input.found { background: #fffaf0; border-color: #f2c9a0; }
 .sheet { max-height: calc(100vh - 32px); overflow-y: auto; }
+.sheet select { display: block; width: 100%; margin-top: 4px; border: 1px solid var(--line2); border-radius: 10px; padding: 8px 10px; font: inherit; color: var(--text); background: var(--bg); }
+.btn.primary.wa { background: #25a35a; border-color: #25a35a; }
+.btn.link { border: 0; background: none; color: #d03b40; padding-left: 0; }
