@@ -215,3 +215,124 @@ window.addEventListener('DOMContentLoaded', () => {
     true
   )
 })
+
+// ---------------------------------------------------------------- WhatsApp: save the person to Contacts
+// Adds a "Save contact" button on web.whatsapp.com. It reads the open conversation (their messages,
+// the phone number) and pre-fills name, phone, email and address; you check it and press Save.
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  const FIELDS = [
+    ['first', 'Name'],
+    ['phone', 'Phone'],
+    ['email', 'Email'],
+    ['company', 'Company'],
+    ['street', 'Street'],
+    ['city', 'City'],
+    ['state', 'State'],
+    ['zip', 'ZIP'],
+    ['note', 'Note'],
+  ]
+  let host, root
+  const fmtPhone = (d) => (d.length === 11 && d[0] === '1' ? `+1 (${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}` : d ? '+' + d : '')
+  function readChat() {
+    const main = document.querySelector('#main')
+    if (!main) return null
+    const head = main.querySelector('header')
+    const title = ((head && (head.querySelector('span[dir="auto"]') || head.querySelector('span[title]'))) || {}).textContent || ''
+    const rows = [...main.querySelectorAll('[data-id]')]
+    let phone = ''
+    const incoming = []
+    for (const r of rows) {
+      const id = r.getAttribute('data-id') || ''
+      if (!id.startsWith('false_')) continue
+      const m = id.match(/^false_(\d{6,15})@c\.us/)
+      if (m && !phone) phone = m[1]
+      const txt = [...r.querySelectorAll('.selectable-text')].map((s) => s.innerText).join('\n').trim()
+      if (txt) incoming.push(txt)
+    }
+    const titleDigits = title.replace(/[^\d]/g, '')
+    if (!phone && /^\+?[\d\s()-]{7,}$/.test(title.trim())) phone = titleDigits
+    // de-dupe nested matches, newest first
+    return { title: title.trim(), phone, texts: [...new Set(incoming)].reverse().slice(0, 300) }
+  }
+  function ensureUi() {
+    if (host && document.body.contains(host)) return
+    host = document.createElement('div')
+    host.id = '__ms_wa_contact'
+    root = host.attachShadow({ mode: 'closed' })
+    root.innerHTML = `<style>
+      .btn{position:fixed;right:24px;bottom:84px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font:500 13px -apple-system,system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
+      .btn:hover{background:#f0f2f5}
+      .bg{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+      .card{background:#fff;border-radius:12px;padding:20px 22px;width:400px;max-height:90vh;overflow:auto;font:13px -apple-system,system-ui,sans-serif;color:#111b21;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+      h3{margin:0 0 4px;font-size:16px} p{margin:0 0 12px;color:#667781}
+      label{display:block;margin:8px 0 3px;color:#667781;font-size:12px}
+      input,textarea{width:100%;box-sizing:border-box;border:1px solid #d1d7db;border-radius:8px;padding:7px 9px;font:13px -apple-system,system-ui,sans-serif}
+      .row{display:flex;gap:8px}.row>div{flex:1}
+      .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+      .actions button{border:0;border-radius:8px;padding:8px 14px;font:500 13px -apple-system,system-ui,sans-serif;cursor:pointer}
+      .save{background:#00a884;color:#fff}.cancel{background:#f0f2f5}
+      .msg{margin-top:10px;color:#00a884}.err{color:#d93025}
+      [hidden]{display:none!important}
+    </style>
+    <button class="btn" hidden>👤 Save contact</button>
+    <div class="bg" hidden><form class="card">
+      <h3>Save to Contacts</h3><p>Filled in from this conversation. Check it, then Save (goes to iCloud and your iPhone).</p>
+      <div id="f"></div>
+      <div class="msg" hidden></div>
+      <div class="actions"><button type="button" class="cancel">Cancel</button><button type="submit" class="save">Save</button></div>
+    </form></div>`
+    const f = root.querySelector('#f')
+    const inp = (k, l) => (k === 'note' ? `<label>${l}</label><textarea name="${k}" rows="2"></textarea>` : `<label>${l}</label><input name="${k}" />`)
+    f.innerHTML =
+      FIELDS.filter(([k]) => !['city', 'state', 'zip'].includes(k) && k !== 'note').map(([k, l]) => inp(k, l)).join('') +
+      `<div class="row"><div>${inp('city', 'City')}</div><div style="flex:.5">${inp('state', 'State')}</div><div style="flex:.7">${inp('zip', 'ZIP')}</div></div>` +
+      inp('note', 'Note')
+    const bg = root.querySelector('.bg')
+    const msg = root.querySelector('.msg')
+    const form = root.querySelector('form')
+    root.querySelector('.btn').addEventListener('click', async () => {
+      const chat = readChat()
+      if (!chat) return
+      let parsed = {}
+      try {
+        parsed = (await ipcRenderer.invoke('wa:parse-contact', chat.texts)) || {}
+      } catch {}
+      const site = ((chat.texts.join(' ').match(/\b(?:https?:\/\/)?(?:www\.)[^\s,]+/i) || [])[0] || '').replace(/[.)]+$/, '')
+      const titleIsPhone = !chat.title || /^\+?[\d\s()-]{7,}$/.test(chat.title)
+      const name = [parsed.first, parsed.last].filter(Boolean).join(' ') || (titleIsPhone ? '' : chat.title)
+      const vals = { ...parsed, first: name, phone: fmtPhone(chat.phone), company: '', note: ['Saved from WhatsApp', site].filter(Boolean).join(' · ') }
+      for (const [k] of FIELDS) form.elements[k].value = vals[k] || ''
+      msg.hidden = true
+      bg.hidden = false
+      form.elements.first.focus()
+    })
+    const close = () => (bg.hidden = true)
+    root.querySelector('.cancel').addEventListener('click', close)
+    bg.addEventListener('click', (e) => e.target === bg && close())
+    form.addEventListener('keydown', (e) => e.key === 'Escape' && close())
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const c = {}
+      for (const [k] of FIELDS) c[k] = form.elements[k].value.trim()
+      c.last = '' // whole name goes in the first-name field, like in iMessage
+      msg.hidden = false
+      msg.className = 'msg'
+      msg.textContent = 'Saving…'
+      try {
+        await ipcRenderer.invoke('wa:add-contact', c)
+        msg.textContent = '✓ Saved to Contacts'
+        setTimeout(close, 1200)
+      } catch (err) {
+        msg.className = 'msg err'
+        msg.textContent = String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+      }
+    })
+    document.body.appendChild(host)
+  }
+  setInterval(() => {
+    if (!document.body) return
+    ensureUi()
+    const show = !!document.querySelector('#main header')
+    root.querySelector('.btn').hidden = !show
+  }, 1000)
+}

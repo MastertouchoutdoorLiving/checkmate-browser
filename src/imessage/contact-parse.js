@@ -19,8 +19,8 @@
       '(?:\\s*,?\\s*(?:apt|apartment|unit|suite|ste|#)\\.?\\s*[A-Za-z0-9-]+)?' +
       '(?:\\s+[NSEW]{1,2}\\b)?)' + // street
       '\\s*,?\\s*([A-Za-z][A-Za-z .\'-]{1,30}?)' + // city
-      '\\s*,?\\s+' + stateRe + '\\.?' + // state
-      '\\s*,?\\s*(\\d{5})(?:-\\d{4})?\\b',
+      '\\s*,?\\s+' + stateRe + '\\.?(?![A-Za-z])' + // state
+      '(?:\\s*,?\\s*(\\d{5})(?:-\\d{4})?\\b)?',  // ZIP (people often leave it out)
     'i'
   )
   const title = (s) => s.replace(/\s+/g, ' ').trim().replace(/\b([a-z])([a-z']*)/gi, (m, a, b) => (m.length <= 2 && /^[NSEW]{1,2}$/i.test(m) ? m.toUpperCase() : a.toUpperCase() + b.toLowerCase()))
@@ -47,11 +47,13 @@
     if (a) {
       const st = a[3].toLowerCase()
       const abbr = STATES[st] || (ABBR.has(a[3].toUpperCase()) ? a[3].toUpperCase() : '')
-      if (abbr) {
+      // Without a ZIP, be stricter so phrases like "5 on the road to Florida" don't count.
+      const loose = !a[4] && (!/^\d{2,}/.test(a[1]) || /^(to|in|at|on|by|for|from|near|the)$/i.test(a[2].trim()))
+      if (abbr && !loose) {
         out.street = title(a[1].replace(/\s*,\s*$/, ''))
         out.city = title(a[2])
         out.state = abbr
-        out.zip = a[4]
+        out.zip = a[4] || ''
       }
     }
     const firstHit = Math.min(e ? e.index : Infinity, a && out.street ? a.index : Infinity)
@@ -71,6 +73,17 @@
       if (!out.email && p.email) out.email = p.email
       if (!out.street && p.street) Object.assign(out, { street: p.street, city: p.city, state: p.state, zip: p.zip })
       if (!out.first && p.first) Object.assign(out, { first: p.first, last: p.last })
+    }
+    // A message that is just a name, like "Shelly Ann Grant".
+    if (!out.first) {
+      for (const t of texts) {
+        const s = String(t || '').trim().replace(/[.!]+$/, '')
+        const words = s.split(/\s+/)
+        if (words.length >= 2 && words.length <= 4 && words.every((w) => /^[A-Z][A-Za-z'.-]+$/.test(w) && !NOT_NAME.test(w))) {
+          Object.assign(out, { first: words[0], last: words.slice(1).join(' ') })
+          break
+        }
+      }
     }
     return out
   }

@@ -18,6 +18,7 @@ const { pathToFileURL, fileURLToPath } = require('url')
 const path = require('path')
 const fs = require('fs')
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
+const contactParse = require('./imessage/contact-parse.js')
 const {
   installChromeWebStore,
   uninstallExtension,
@@ -688,6 +689,23 @@ function registerIpc() {
   // screenshots that the page's own paste event doesn't expose).
   ipcMain.handle('imsg:clipboard-files', imsgOnly(() => readClipboardFiles()))
   ipcMain.handle('imsg:add-contact', imsgOnly((c) => imessage.addContact(c || {})))
+  // "Save contact" button on WhatsApp Web (see page-preload.js).
+  const waOnly = (fn) => async (e, ...args) => {
+    let h = ''
+    try {
+      h = new URL(e.senderFrame ? e.senderFrame.url : e.sender.getURL()).hostname
+    } catch {}
+    if (h !== 'web.whatsapp.com' || (e.senderFrame && e.senderFrame.parent)) throw new Error('Not allowed')
+    return fn(...args)
+  }
+  ipcMain.handle('wa:parse-contact', waOnly((texts) => contactParse.fromMessages((Array.isArray(texts) ? texts : []).slice(0, 300).map((t) => String(t).slice(0, 5000)))))
+  ipcMain.handle(
+    'wa:add-contact',
+    waOnly((c) => {
+      if (process.platform !== 'darwin' && !process.env.MULTISPACE_TEST_CHATDB) throw new Error('Saving to Contacts works on a Mac only.')
+      return imessage.addContact(c || {})
+    })
+  )
   ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))
   // Favorites and read/unread marks live in the browser (Messages' own database is read-only).
   ipcMain.handle('imsg:prefs', imsgOnly(() => store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} }))
