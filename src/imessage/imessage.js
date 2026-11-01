@@ -510,7 +510,7 @@ $('#contact-form').addEventListener('submit', async (e) => {
     setTimeout(refreshChats, 1500)
     setTimeout(refreshChats, 5000)
   } catch (err) {
-    $('#contact-err').textContent = 'Could not save: ' + String(err.message || err).replace(/^Error invoking remote method[^:]*: (Error: )?/, '') + ' (If macOS asked, allow the browser to control Contacts in System Settings → Privacy & Security → Automation.)'
+    $('#contact-err').textContent = 'Could not save: ' + String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '') + ' (If macOS asked, allow the browser to control Contacts in System Settings → Privacy & Security → Automation.)'
     $('#contact-err').hidden = false
   } finally {
     $('#contact-save').disabled = false

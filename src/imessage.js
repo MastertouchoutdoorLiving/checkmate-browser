@@ -265,14 +265,15 @@ async function addContact(c) {
   await osascript(
     [
       'on run argv',
-      'set {fn, ln, co, ph, em, nt, st, ci, sa, zp} to argv',
+      // names are prefixed with "v" so none of them clash with AppleScript words (like "st" in "1st")
+      'set {vFirst, vLast, vOrg, vPhone, vEmail, vNote, vStreet, vCity, vState, vZip} to argv',
       'tell application "Contacts"',
-      'set p to make new person with properties {first name:fn, last name:ln}',
-      'if co is not "" then set organization of p to co',
-      'if nt is not "" then set note of p to nt',
-      'if ph is not "" then make new phone at end of phones of p with properties {label:"mobile", value:ph}',
-      'if em is not "" then make new email at end of emails of p with properties {label:"work", value:em}',
-      'if st is not "" or ci is not "" or zp is not "" then make new address at end of addresses of p with properties {label:"home", street:st, city:ci, state:sa, zip:zp}',
+      'set p to make new person with properties {first name:vFirst, last name:vLast}',
+      'if vOrg is not "" then set organization of p to vOrg',
+      'if vNote is not "" then set note of p to vNote',
+      'if vPhone is not "" then make new phone at end of phones of p with properties {label:"mobile", value:vPhone}',
+      'if vEmail is not "" then make new email at end of emails of p with properties {label:"work", value:vEmail}',
+      'if vStreet is not "" or vCity is not "" or vZip is not "" then make new address at end of addresses of p with properties {label:"home", street:vStreet, city:vCity, state:vState, zip:vZip}',
       'save',
       'end tell',
       'end run',
