@@ -31,6 +31,10 @@ It runs on Chromium (through Electron), so sites behave the way they do in Chrom
 
 Add **iMessage** from **+ Add app**. It shows your conversations and lets you reply, with unread badges like the other apps.
 
+- Three columns: the **Inbox** (favorites as big avatars on top, then conversations grouped by Today / Yesterday / This week / Earlier), the conversation, and a **details** panel (members, favorite, mark unread, open in Messages). The panel button at the top right shows or hides details.
+- Filter by **All / Unread / Read / Favorites**. Right-click any conversation to mark it read or unread or add it to Favorites.
+- Links in messages open as a tab in the same space.
+
 - The first time, macOS needs to allow the browser to read your Messages history: System Settings → Privacy & Security → **Full Disk Access** → turn on **Terminal** (or **MultiSpace Browser** if you installed it as an app), then restart the browser.
 - The first time you send, macOS asks to let it control **Messages**. Click OK.
 - Photos and attachments show as "Attachment"; open them in the Messages app. Reading a message here doesn't mark it as read in Messages.

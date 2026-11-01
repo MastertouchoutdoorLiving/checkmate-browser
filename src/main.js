@@ -483,6 +483,17 @@ function registerIpc() {
       return true
     })
   )
+  // Links inside messages open as a normal tab in the same space.
+  ipcMain.on('imsg:open-url', (e, url) => {
+    const tab = findTabByWebContents(e.sender)
+    if (!tab || !tab.internal || !/^https?:\/\//i.test(String(url))) return
+    createTab(tab.spaceId, { url: String(url) })
+  })
+  ipcMain.on('imsg:open-messages', (e, handle) => {
+    if (!findTabByWebContents(e.sender)?.internal) return
+    const h = String(handle || '').replace(/[^\w@.+\-]/g, '')
+    shell.openExternal(h ? 'imessage://' + h : 'imessage://')
+  })
   ipcMain.on('imsg:open-privacy', (e) => {
     if (findTabByWebContents(e.sender)?.internal) shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles')
   })

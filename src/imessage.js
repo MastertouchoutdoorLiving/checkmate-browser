@@ -152,6 +152,8 @@ async function listChats(limit = 150) {
       date: toMs(r.date),
       unread: r.unread || 0,
       lastFromMe: !!r.fromMe,
+      handle: members.length === 1 ? members[0] : r.ident,
+      members: members.map((h) => ({ handle: h, name: nameFor(h, map) })),
     }
   })
 }
