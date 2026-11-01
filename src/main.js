@@ -67,6 +67,10 @@ function getRuntime(spaceId) {
 
   const ses = session.fromPartition(`persist:space-${spaceId}`)
   ses.setUserAgent(chromeUserAgent(ses.getUserAgent()))
+  // Turn off passkeys so Google etc. offer password sign-in instead of hanging.
+  const pagePreload = { type: 'frame', id: 'multispace-page', filePath: path.join(__dirname, 'page-preload.js') }
+  if (ses.registerPreloadScript) ses.registerPreloadScript(pagePreload)
+  else ses.setPreloads([...ses.getPreloads(), pagePreload.filePath])
 
   const rt = { spaceId, session: ses, tabs: new Map(), order: [], activeTabId: null, restored: false }
   runtimes.set(spaceId, rt)
