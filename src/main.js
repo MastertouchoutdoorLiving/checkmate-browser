@@ -862,7 +862,8 @@ function buildAppMenu() {
           accelerator: 'CmdOrCtrl+W',
           click: () => {
             const t = activeTab()
-            if (t) closeTab(t.spaceId, t.id)
+            // Apps aren't tabs: Cmd+W never closes them (WhatsApp etc. stay loaded and signed in).
+            if (t && !t.appId) closeTab(t.spaceId, t.id)
           },
         },
         { type: 'separator' },

@@ -61,8 +61,9 @@ ${esc(a.url)}">
     })
     .join('')
 
-  // Tabs
+  // Tabs: only websites you opened yourself. Apps live in the apps panel, not in the tab strip.
   $('#tabs').innerHTML = space.tabs
+    .filter((t) => !t.appId)
     .map(
       (t) => `
       <div class="tab ${t.id === space.activeTabId ? 'active' : ''} ${t.appId ? 'app-tab' : ''}" data-id="${t.id}" title="${esc(t.title)}">
