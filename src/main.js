@@ -790,6 +790,13 @@ function showContextMenu(tab, params) {
   if (params.isEditable) items.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' })
   else if (params.selectionText) items.push({ role: 'copy' }, { type: 'separator' })
 
+  // The built-in iMessage page only gets copy/paste (it has its own right-click menu for conversations).
+  if (tab.internal) {
+    while (items.length && items[items.length - 1].type === 'separator') items.pop()
+    if (!items.length) return
+    return Menu.buildFromTemplate(items).popup({ window: win })
+  }
+
   items.push(
     { label: 'Back', enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
     { label: 'Forward', enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
@@ -797,7 +804,10 @@ function showContextMenu(tab, params) {
   )
 
   const rt = runtimes.get(tab.spaceId)
-  const extItems = rt ? rt.extensions.getContextMenuItems(wc, params) : []
+  let extItems = []
+  try {
+    extItems = rt ? rt.extensions.getContextMenuItems(wc, params) : []
+  } catch {}
   if (extItems.length) items.push({ type: 'separator' }, ...extItems)
 
   items.push({ type: 'separator' }, { label: 'Inspect', click: () => wc.inspectElement(params.x, params.y) })
@@ -959,6 +969,9 @@ function quitGracefully() {
 }
 // Ctrl+C or closing the Terminal window: save everything before exiting.
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, quitGracefully)
+// A bug in one feature should never pop up an error box or stop the browser; log it instead.
+process.on('uncaughtException', (err) => console.error('[error]', err))
+process.on('unhandledRejection', (err) => console.error('[error]', err))
 
 app.whenReady().then(() => {
   store = new Store(app.getPath('userData'))
