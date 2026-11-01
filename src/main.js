@@ -12,8 +12,9 @@ const {
   shell,
   clipboard,
   net,
+  nativeImage,
 } = require('electron')
-const { pathToFileURL } = require('url')
+const { pathToFileURL, fileURLToPath } = require('url')
 const path = require('path')
 const fs = require('fs')
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
@@ -494,6 +495,9 @@ function registerIpc() {
   ipcMain.handle('imsg:send-chat', imsgOnly((guid, text) => imessage.sendToChat(String(guid), String(text))))
   ipcMain.handle('imsg:send-file', imsgOnly((target, name, bytes) => imessage.sendFile(target, name, bytes)))
   ipcMain.handle('imsg:contacts', imsgOnly(() => imessage.searchContacts()))
+  // Pictures/files on the clipboard, read by the browser itself (covers Finder copies and
+  // screenshots that the page's own paste event doesn't expose).
+  ipcMain.handle('imsg:clipboard-files', imsgOnly(() => readClipboardFiles()))
   ipcMain.handle('imsg:add-contact', imsgOnly((c) => imessage.addContact(c || {})))
   ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))
   // Favorites and read/unread marks live in the browser (Messages' own database is read-only).
@@ -874,6 +878,54 @@ function showContextMenu(tab, params) {
 
   items.push({ type: 'separator' }, { label: 'Inspect', click: () => wc.inspectElement(params.x, params.y) })
   Menu.buildFromTemplate(items).popup({ window: win })
+}
+
+const CLIP_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif', tif: 'image/tiff', tiff: 'image/tiff', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', mp3: 'audio/mpeg', m4a: 'audio/mp4' }
+// Electron's clipboard is the async ClipboardItem API: walk every format on offer.
+async function readClipboardFiles() {
+  let items = []
+  try {
+    items = await clipboard.read()
+  } catch {
+    return []
+  }
+  const paths = new Set()
+  const images = []
+  const blobOf = async (it, t) => {
+    const b = await it.getType(t)
+    return typeof b === 'string' ? Buffer.from(b) : Buffer.from(await b.arrayBuffer())
+  }
+  for (const it of items) {
+    for (const t of it.types || []) {
+      const raw = (t.match(/format="([^"]+)"/) || [])[1] || ''
+      try {
+        if (t === 'text/uri-list' || /file-url|NSFilenamesPboardType|FileURL/i.test(raw)) {
+          const txt = (await blobOf(it, t)).toString('utf8')
+          for (const m of txt.matchAll(/file:\/\/[^\s<"]+/g)) paths.add(fileURLToPath(m[0]))
+          for (const m of txt.matchAll(/<string>(\/[^<]+)<\/string>/g)) paths.add(m[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&apos;/g, "'").replace(/&quot;/g, '"'))
+        } else if (/^image\/(png|jpeg|gif|webp)$/.test(t)) {
+          images.push({ type: t, bytes: await blobOf(it, t) })
+        } else if (/^public\.(png|jpeg|tiff)$|^image\/tiff$|^TIFF$|NSTIFFPboardType/.test(raw || t)) {
+          const img = nativeImage.createFromBuffer(await blobOf(it, t))
+          if (!img.isEmpty()) images.push({ type: 'image/png', bytes: img.toPNG() })
+        }
+      } catch {}
+    }
+  }
+  const out = []
+  for (const p of paths) {
+    try {
+      const st = fs.statSync(p)
+      if (!st.isFile() || st.size > 100 * 1024 * 1024) continue
+      const name = path.basename(p)
+      out.push({ name, type: CLIP_MIME[path.extname(name).slice(1).toLowerCase()] || 'application/octet-stream', bytes: fs.readFileSync(p) })
+    } catch {}
+  }
+  if (!out.length && images.length) {
+    const best = images.find((x) => x.type === 'image/png') || images[0]
+    out.push({ name: `pasted-${Date.now()}.${best.type.split('/')[1].replace('jpeg', 'jpg')}`, type: best.type, bytes: best.bytes })
+  }
+  return out
 }
 
 function buildAppMenu() {

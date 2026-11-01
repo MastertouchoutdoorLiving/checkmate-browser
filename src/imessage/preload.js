@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('imsg', {
   prefs: () => ipcRenderer.invoke('imsg:prefs'),
   setPrefs: (p) => ipcRenderer.invoke('imsg:set-prefs', p),
   sendFile: (target, name, bytes) => ipcRenderer.invoke('imsg:send-file', target, name, bytes),
+  clipboardFiles: () => ipcRenderer.invoke('imsg:clipboard-files'),
   contacts: () => ipcRenderer.invoke('imsg:contacts'),
   addContact: (c) => ipcRenderer.invoke('imsg:add-contact', c),
   whatsapp: (phone, text) => ipcRenderer.invoke('imsg:whatsapp', phone, text),

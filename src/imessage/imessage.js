@@ -515,13 +515,49 @@ $('#file-pick').addEventListener('change', (e) => {
   addFiles([...e.target.files])
   e.target.value = ''
 })
-document.addEventListener('paste', (e) => {
+const namedFile = (f, i) =>
+  f.name && f.name !== 'image.png' ? f : new File([f], `pasted-${Date.now()}-${i}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type })
+// Ask the browser for pictures/files on the clipboard (Finder copies, screenshots, Photos).
+async function pasteFromBrowser() {
+  try {
+    const got = (await window.imsg.clipboardFiles()) || []
+    if (got.length) {
+      addFiles(got.map((g) => new File([g.bytes], g.name, { type: g.type })))
+      return true
+    }
+  } catch {}
+  return false
+}
+let lastPasteAt = 0
+document.addEventListener('paste', async (e) => {
+  lastPasteAt = Date.now()
   if (!current || !e.clipboardData) return
-  if (e.target.closest && e.target.closest('.sheet')) return // not while a form is open
-  const files = [...e.clipboardData.files]
-  if (!files.length) return
+  if (e.target.closest && e.target.closest('.sheet')) return // forms paste normally
+  const dt = e.clipboardData
+  let files = [...dt.files]
+  if (!files.length) files = [...dt.items].filter((it) => it.kind === 'file').map((it) => it.getAsFile()).filter(Boolean)
+  if (files.length) {
+    e.preventDefault()
+    return addFiles(files.map(namedFile))
+  }
+  if (e.target.id === 'to') return // the To field takes text as usual
+  const text = dt.getData('text/plain')
   e.preventDefault()
-  addFiles(files.map((f, i) => (f.name && f.name !== 'image.png' ? f : new File([f], `pasted-${Date.now()}-${i}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type }))))
+  // Finder copies arrive as just the file name, so check for real files first, then paste the text.
+  if (await pasteFromBrowser()) return
+  if (text) {
+    const box = $('#text')
+    if (document.activeElement !== box) box.focus()
+    document.execCommand('insertText', false, text) || (box.value += text)
+    box.dispatchEvent(new Event('input'))
+  }
+})
+// Safety net: if Cmd+V didn't produce a paste event (nothing focused), still pick up pictures.
+document.addEventListener('keydown', (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'v' || e.shiftKey || e.altKey || !current) return
+  if (e.target.closest && e.target.closest('.sheet')) return
+  const at = Date.now()
+  setTimeout(() => lastPasteAt < at && pasteFromBrowser(), 250)
 })
 let dragDepth = 0
 $('#convo').addEventListener('dragenter', (e) => {
