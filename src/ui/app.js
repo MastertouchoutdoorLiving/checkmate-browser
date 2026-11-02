@@ -332,7 +332,7 @@ function parseAppLine(line) {
   return { name, url }
 }
 
-const STARTER = ['Gmail', 'Google Calendar', 'Google Drive', 'Slack', 'WhatsApp', 'Outlook']
+const STARTER = ['Gmail', 'Google Drive', 'JobTread', 'Schedulus', 'Quo', 'Heritage Pool Plus', 'ConstructCC', 'Proline', 'Horner Xpress', 'Pool360', 'Google Calendar', 'WhatsApp']
 
 function spaceModal(space) {
   const editing = !!space
@@ -352,7 +352,7 @@ function spaceModal(space) {
            ? ''
            : `<label>Start with these apps</label>
               <div class="catalog">${starters
-                .map((c, i) => `<label class="check"><input type="checkbox" name="app" value="${i}" ${i < 3 ? 'checked' : ''}/> <img src="${esc(c.icon || iconFor(c.url))}" alt="">${esc(c.name)}</label>`)
+                .map((c, i) => `<label class="check"><input type="checkbox" name="app" value="${i}" ${i < 10 ? 'checked' : ''}/> <img src="${esc(c.icon || iconFor(c.url))}" alt="">${esc(c.name)}</label>`)
                 .join('')}</div>
               <label>Add any other apps (one per line: name, then the link)</label>
               <textarea name="custom" rows="3" placeholder="JobTread, https://app.jobtread.com/jobs&#10;Schedulus, https://your-schedulus-link&#10;https://any-other-site.com"></textarea>

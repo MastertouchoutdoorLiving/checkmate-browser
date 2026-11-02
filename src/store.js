@@ -29,6 +29,14 @@ const CATALOG = [
   { name: 'LinkedIn', url: 'https://www.linkedin.com/' },
   { name: 'X', url: 'https://x.com/' },
   { name: 'JobTread', url: 'https://app.jobtread.com/' },
+  { name: 'Schedulus', url: 'https://schedulus.com/' },
+  { name: 'Quo', url: 'https://quo.com/' },
+  // Master Touch suppliers
+  { name: 'Heritage Pool Plus', url: 'https://www.heritagepoolplus.com/' },
+  { name: 'ConstructCC', url: 'https://constructcc.com/' },
+  { name: 'Proline', url: 'https://www.prolinedist.com/account/login' },
+  { name: 'Horner Xpress', url: 'https://hornerxpressway.com/profile/login' },
+  { name: 'Pool360', url: 'https://www.pool360.com/' },
   { name: 'Podium', url: 'https://app.podium.com/' },
   { name: 'Trello', url: 'https://trello.com/' },
   { name: 'Asana', url: 'https://app.asana.com/' },
@@ -39,6 +47,9 @@ const CATALOG = [
   { name: 'Dropbox', url: 'https://www.dropbox.com/home' },
   { name: 'Chrome Web Store', url: 'https://chromewebstore.google.com/' },
 ]
+
+// Apps a new install (and a new space) starts with: the Master Touch team set.
+const DEFAULT_APPS = ['Gmail', 'Google Drive', 'JobTread', 'Schedulus', 'Quo', 'Heritage Pool Plus', 'ConstructCC', 'Proline', 'Horner Xpress', 'Pool360']
 
 const id = () => crypto.randomBytes(6).toString('hex')
 
@@ -59,10 +70,11 @@ class Store {
       this.state = defaultState()
     }
     if (this.state.spaces.length === 0) {
-      const s = this.addSpace({ name: 'Personal' })
-      this.addApp(s.id, CATALOG[0])
-      this.addApp(s.id, CATALOG[1])
-      this.addApp(s.id, CATALOG[2])
+      const s = this.addSpace({ name: 'Master Touch' })
+      for (const n of DEFAULT_APPS) {
+        const c = CATALOG.find((x) => x.name === n)
+        if (c) this.addApp(s.id, c)
+      }
     }
     if (!this.getSpace(this.state.activeSpaceId)) this.state.activeSpaceId = this.state.spaces[0].id
   }
@@ -170,4 +182,4 @@ class Store {
   }
 }
 
-module.exports = { Store, CATALOG, COLORS }
+module.exports = { Store, CATALOG, COLORS, DEFAULT_APPS }
