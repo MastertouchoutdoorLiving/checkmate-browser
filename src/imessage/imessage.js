@@ -654,6 +654,7 @@ $('#send-form').addEventListener('submit', async (e) => {
 function openContactForm(handle, maybe, sender) {
   const f = $('#contact-form')
   f.reset()
+  jtRefresh()
   f.querySelectorAll('.found').forEach((i) => i.classList.remove('found'))
   $('#contact-err').hidden = true
   const isEmail = /@/.test(handle || '')
@@ -698,6 +699,12 @@ $('#contact-form').addEventListener('submit', async (e) => {
     await window.imsg.addContact(data)
     closeContactForm()
     toast('Saved to Contacts')
+    if ($('#jt-on').checked && jt.connected) {
+      window.imsg.jtAdd(data).then(
+        (r) => toast(r.existing ? 'Already a customer in JobTread' : 'Added to JobTread', 'Open', () => window.imsg.jtOpen(r.url)),
+        (err) => toast('JobTread: ' + String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, ''))
+      )
+    }
     setTimeout(refreshChats, 1500)
     setTimeout(refreshChats, 5000)
   } catch (err) {
@@ -1122,3 +1129,40 @@ async function setupQuickReplies() {
     if (!$('#qr-pop').hidden && !e.target.closest('#qr-pop') && !e.target.closest('#qr-btn') && $('#qr-editor').hidden) qrClose()
   })
 }
+
+
+// ---- JobTread checkbox in the contact form
+let jt = { connected: false, on: true, org: '' }
+function jtShow() {
+  $('#jt-on').checked = jt.connected && jt.on
+  $('#jt-org').textContent = jt.connected && jt.org ? `(${jt.org})` : jt.connected ? '' : '(not connected)'
+  $('#jt-connect').hidden = jt.connected || !$('#jt-on').checked
+}
+async function jtRefresh() {
+  try { jt = await window.imsg.jtStatus() } catch {}
+  $('#jt-msg').textContent = ''
+  jtShow()
+}
+$('#jt-on').addEventListener('change', async (e) => {
+  if (jt.connected) {
+    try { jt = await window.imsg.jtSetOn(e.target.checked) } catch {}
+  }
+  $('#jt-connect').hidden = jt.connected || !e.target.checked
+  if (!jt.connected && e.target.checked) $('#jt-key').focus()
+})
+$('#jt-connect-btn').addEventListener('click', async () => {
+  const key = $('#jt-key').value.trim()
+  if (!key) return $('#jt-key').focus()
+  $('#jt-msg').className = ''
+  $('#jt-msg').textContent = 'Connecting…'
+  try {
+    jt = await window.imsg.jtSetKey(key)
+    $('#jt-key').value = ''
+    jtShow()
+    $('#jt-on').checked = true
+    toast(`Connected to JobTread${jt.org ? ' · ' + jt.org : ''}`)
+  } catch (err) {
+    $('#jt-msg').className = 'err'
+    $('#jt-msg').textContent = String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+  }
+})

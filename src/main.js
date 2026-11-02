@@ -14,12 +14,14 @@ const {
   net,
   nativeImage,
   Notification,
+  safeStorage,
 } = require('electron')
 const { pathToFileURL, fileURLToPath } = require('url')
 const path = require('path')
 const fs = require('fs')
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
 const contactParse = require('./imessage/contact-parse.js')
+const jobtread = require('./jobtread.js')
 const {
   installChromeWebStore,
   uninstallExtension,
@@ -773,6 +775,26 @@ function registerIpc() {
     const tab = findTabByWebContents(e.sender)
     if (tab && tab.internal) imsgOpenChat = guid ? String(guid) : null
   })
+  ipcMain.handle('jt:status', (e) => (qrAllowed(e) ? jtStatus() : { connected: false }))
+  ipcMain.handle('jt:set-key', (e, key) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    return jtSetKey(key)
+  })
+  ipcMain.handle('jt:set-on', (e, on) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    if (store.state.settings.jobtread) store.state.settings.jobtread.on = !!on
+    store.save()
+    return jtStatus()
+  })
+  ipcMain.handle('jt:add', (e, c) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    return jtAdd(c)
+  })
+  ipcMain.on('jt:open', (e, url) => {
+    if (!qrAllowed(e) || !/^https:\/\/app\.jobtread\.com\//.test(String(url))) return
+    const t = findTabByWebContents(e.sender)
+    createTab((t && t.spaceId) || store.state.activeSpaceId, { url: String(url) })
+  })
   ipcMain.handle('qr:list', (e) => (qrAllowed(e) ? quickReplies() : []))
   ipcMain.handle('qr:set', (e, list) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')
@@ -1232,6 +1254,46 @@ async function readClipboardFiles() {
     out.push({ name: `pasted-${Date.now()}.${best.type.split('/')[1].replace('jpeg', 'jpg')}`, type: best.type, bytes: best.bytes })
   }
   return out
+}
+
+// ---------------------------------------------------------------- JobTread (Save contact → also add the customer)
+function jtKey() {
+  const k = store.state.settings.jobtread && store.state.settings.jobtread.key
+  if (!k) return ''
+  try {
+    return safeStorage.isEncryptionAvailable() && store.state.settings.jobtread.enc ? safeStorage.decryptString(Buffer.from(k, 'base64')) : Buffer.from(k, 'base64').toString('utf8')
+  } catch {
+    return ''
+  }
+}
+function jtStatus() {
+  const j = store.state.settings.jobtread || {}
+  return { connected: !!jtKey(), org: j.org || '', on: j.on !== false }
+}
+async function jtSetKey(key) {
+  key = String(key || '').trim()
+  if (!key) {
+    delete store.state.settings.jobtread
+    store.save()
+    return jtStatus()
+  }
+  const org = await jobtread.whoAmI(key)
+  const enc = safeStorage.isEncryptionAvailable()
+  store.state.settings.jobtread = {
+    key: (enc ? safeStorage.encryptString(key) : Buffer.from(key, 'utf8')).toString('base64'),
+    enc,
+    org: org.name || '',
+    on: true,
+  }
+  store.save()
+  return jtStatus()
+}
+async function jtAdd(c) {
+  const key = jtKey()
+  if (!key) throw new Error('JobTread is not connected yet.')
+  const clean = {}
+  for (const k of ['first', 'company', 'phone', 'email', 'street', 'city', 'state', 'zip', 'note']) clean[k] = String((c && c[k]) || '').trim().slice(0, 500)
+  return jobtread.addCustomer(key, clean)
 }
 
 // ---------------------------------------------------------------- quick replies (iMessage + WhatsApp)

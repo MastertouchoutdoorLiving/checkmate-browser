@@ -283,3 +283,13 @@ html, body { overflow: hidden; }
 .qr-ed-actions { display: flex; gap: 8px; justify-content: space-between; padding-top: 4px; }
 .qr-ed-actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .qr-tip { color: var(--muted); font-size: 12px; padding: 0 2px 8px; }
+
+/* JobTread in the contact form */
+.jt-box { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 10px; margin-bottom: 10px; }
+.sheet label.jt-check { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text); font-size: 13px; cursor: pointer; }
+#jt-org { color: var(--muted); font-weight: 400; font-size: 12px; }
+#jt-connect p { margin: 8px 0 6px; font-size: 12px; color: var(--muted); }
+.jt-row { display: flex; gap: 6px; }
+.jt-row input { flex: 1; }
+#jt-msg { font-size: 12px; margin-top: 6px; color: var(--muted); }
+#jt-msg.err { color: #9a3412; }

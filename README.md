@@ -63,6 +63,14 @@ The **Unread** app (first in the apps panel) shows every unread conversation in 
 
 Click a row to jump straight to that conversation or app.
 
+## Quick replies
+
+Saved messages you can drop into iMessage or WhatsApp with one click. In iMessage click ⚡ next to the paperclip (or type / at the start of the message). In WhatsApp click **⚡ Quick replies** above **Save contact**. Click **Edit** to add, change or delete them. Write `{name}` where the person's first name should go. iMessage and WhatsApp use the same list.
+
+## Save contact → JobTread
+
+The **Save contact** form (iMessage and WhatsApp) has an **Also add to JobTread** box. Connect it once: in JobTread open app.jobtread.com/grants, create a grant key and paste it in. It is stored encrypted. Each save then creates the customer in JobTread with a contact (name, email, phone, notes) and the job location (address). If a customer with the same name already exists, nothing is duplicated.
+
 ## Run it
 
 You need [Node.js](https://nodejs.org) 20 or newer.
@@ -88,7 +96,7 @@ For iMessage, give **CheckMate Browser** (instead of Terminal) Full Disk Access 
 npm run share-mac
 ```
 
-Builds **MultiSpace-Browser-<version>.dmg** (works on Apple-chip and Intel Macs) and puts it on your Desktop. Send it to your team by Google Drive, email, etc. Each person opens the .dmg and drags the app into Applications. Your logins, spaces and passwords are **not** inside it; everyone starts fresh with their own.
+Builds **CheckMate-Browser-<version>.dmg** (works on Apple-chip and Intel Macs) and puts it on your Desktop. Send it to your team by Google Drive, email, etc. Each person opens the .dmg and drags the app into Applications. Your logins, spaces and passwords are **not** inside it; everyone starts fresh with their own.
 
 The first time, macOS says it can't check the app (it isn't signed with an Apple Developer ID). Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. With an Apple Developer account the app can be signed so this warning goes away.
 

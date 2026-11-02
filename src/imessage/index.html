@@ -124,6 +124,14 @@
         <label>ZIP<input name="zip" autocomplete="off" /></label>
       </div>
       <label>Notes<textarea name="note" rows="2"></textarea></label>
+      <div class="jt-box">
+        <label class="jt-check"><input type="checkbox" id="jt-on" /> Also add to JobTread <span id="jt-org"></span></label>
+        <div id="jt-connect" hidden>
+          <p>Connect once: in JobTread open <b>app.jobtread.com/grants</b>, create a grant key, copy it and paste it here.</p>
+          <div class="jt-row"><input id="jt-key" placeholder="Paste JobTread grant key" autocomplete="off" /><button type="button" id="jt-connect-btn" class="btn">Connect</button></div>
+          <div id="jt-msg"></div>
+        </div>
+      </div>
       <div class="sheet-err" id="contact-err" hidden></div>
       <div class="sheet-actions">
         <button type="button" id="contact-cancel" class="btn">Cancel</button>

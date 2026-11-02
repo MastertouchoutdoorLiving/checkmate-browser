@@ -287,12 +287,28 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       .actions button{border:0;border-radius:8px;padding:8px 14px;font:500 13px -apple-system,system-ui,sans-serif;cursor:pointer}
       .save{background:#00a884;color:#fff}.cancel{background:#f0f2f5}
       .msg{margin-top:10px;color:#00a884}.err{color:#d93025}
+      .jt{border:1px solid #e9edef;background:#f7f8fa;border-radius:10px;padding:8px 10px;margin-top:12px}
+      .jt label.ck{display:flex;align-items:center;gap:8px;margin:0;color:#111b21;font-size:13px;cursor:pointer}
+      .jt label.ck input{width:auto}
+      .jt .org{color:#667781;font-size:12px}
+      .jt p{margin:8px 0 6px;font-size:12px}
+      .jt .r{display:flex;gap:6px}.jt .r button{border:0;border-radius:8px;padding:0 12px;background:#00a884;color:#fff;cursor:pointer}
+      .jt .jm{font-size:12px;margin-top:6px;color:#667781}
+      .done a{color:#00a884;cursor:pointer;text-decoration:underline;margin-left:6px}
       [hidden]{display:none!important}
     </style>
     <button class="btn" hidden>👤 Save contact</button>
     <div class="bg" hidden><form class="card">
       <h3>Save to Contacts</h3><p>Filled in from this conversation. Check it, then Save (goes to iCloud and your iPhone).</p>
       <div id="f"></div>
+      <div class="jt">
+        <label class="ck"><input type="checkbox" class="jton"/> Also add to JobTread <span class="org"></span></label>
+        <div class="jtc" hidden>
+          <p>Connect once: in JobTread open <b>app.jobtread.com/grants</b>, create a grant key, copy it and paste it here.</p>
+          <div class="r"><input class="jtkey" placeholder="Paste JobTread grant key" autocomplete="off"/><button type="button" class="jtgo">Connect</button></div>
+          <div class="jm"></div>
+        </div>
+      </div>
       <div class="msg" hidden></div>
       <div class="actions"><button type="button" class="cancel">Cancel</button><button type="submit" class="save">Save</button></div>
     </form></div>`
@@ -305,6 +321,41 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     const bg = root.querySelector('.bg')
     const msg = root.querySelector('.msg')
     const form = root.querySelector('form')
+    const errText = (err) => String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+    let jt = { connected: false, on: true, org: '' }
+    const jtOn = root.querySelector('.jton')
+    const jtShow = () => {
+      jtOn.checked = jt.connected && jt.on
+      root.querySelector('.org').textContent = jt.connected && jt.org ? `(${jt.org})` : jt.connected ? '' : '(not connected)'
+      root.querySelector('.jtc').hidden = jt.connected || !jtOn.checked
+    }
+    const jtRefresh = async () => {
+      try { jt = await ipcRenderer.invoke('jt:status') } catch {}
+      root.querySelector('.jm').textContent = ''
+      jtShow()
+    }
+    jtOn.addEventListener('change', async () => {
+      if (jt.connected) {
+        try { jt = await ipcRenderer.invoke('jt:set-on', jtOn.checked) } catch {}
+      }
+      root.querySelector('.jtc').hidden = jt.connected || !jtOn.checked
+    })
+    root.querySelector('.jtgo').addEventListener('click', async () => {
+      const k = root.querySelector('.jtkey').value.trim()
+      const jm = root.querySelector('.jm')
+      if (!k) return
+      jm.className = 'jm'
+      jm.textContent = 'Connecting…'
+      try {
+        jt = await ipcRenderer.invoke('jt:set-key', k)
+        root.querySelector('.jtkey').value = ''
+        jtShow()
+        jtOn.checked = true
+      } catch (err) {
+        jm.className = 'jm err'
+        jm.textContent = errText(err)
+      }
+    })
     root.querySelector('.btn').addEventListener('click', async () => {
       const chat = readChat()
       if (!chat) return
@@ -317,6 +368,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       const name = [parsed.first, parsed.last].filter(Boolean).join(' ') || (titleIsPhone ? '' : chat.title)
       const vals = { ...parsed, first: name, phone: fmtPhone(chat.phone), company: '', note: ['Saved from WhatsApp', site].filter(Boolean).join(' · ') }
       for (const [k] of FIELDS) form.elements[k].value = vals[k] || ''
+      jtRefresh()
       msg.hidden = true
       bg.hidden = false
       form.elements.first.focus()
@@ -336,11 +388,31 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       try {
         await ipcRenderer.invoke('wa:add-contact', c)
         msg.textContent = '✓ Saved to Contacts'
-        setTimeout(close, 1200)
       } catch (err) {
         msg.className = 'msg err'
-        msg.textContent = String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+        msg.textContent = errText(err)
+        if (!(jtOn.checked && jt.connected)) return
       }
+      if (jtOn.checked && jt.connected) {
+        const line = document.createElement('div')
+        line.className = 'msg done'
+        line.textContent = 'Adding to JobTread…'
+        msg.after(line)
+        try {
+          const r = await ipcRenderer.invoke('jt:add', c)
+          line.textContent = r.existing ? '✓ Already a customer in JobTread' : '✓ Added to JobTread'
+          const a = document.createElement('a')
+          a.textContent = 'Open'
+          a.addEventListener('click', () => ipcRenderer.send('jt:open', r.url))
+          line.appendChild(a)
+          setTimeout(() => { line.remove(); close() }, 4000)
+        } catch (err) {
+          line.className = 'msg err'
+          line.textContent = 'JobTread: ' + errText(err)
+        }
+        return
+      }
+      if (msg.className === 'msg') setTimeout(close, 1200)
     })
     document.body.appendChild(host)
   }
