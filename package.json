@@ -7,7 +7,8 @@
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",
-    "install-mac": "bash scripts/install-mac.sh"
+    "install-mac": "bash scripts/install-mac.sh",
+    "share-mac": "bash scripts/share-mac.sh"
   },
   "license": "MIT",
   "dependencies": {
@@ -30,13 +31,17 @@
       "category": "public.app-category.productivity",
       "target": [
         "dir"
-      ]
+      ],
+      "artifactName": "MultiSpace-Browser-${version}.${ext}"
     },
     "win": {
       "target": "nsis"
     },
     "linux": {
       "target": "AppImage"
+    },
+    "dmg": {
+      "title": "MultiSpace Browser"
     }
   }
 }

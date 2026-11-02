@@ -68,6 +68,16 @@ This builds **MultiSpace Browser.app**, puts it in **Applications** and opens it
 
 For iMessage, give **MultiSpace Browser** (instead of Terminal) Full Disk Access in System Settings → Privacy & Security.
 
+### Give it to your team (Mac)
+
+```bash
+npm run share-mac
+```
+
+Builds **MultiSpace-Browser-<version>.dmg** (works on Apple-chip and Intel Macs) and puts it on your Desktop. Send it to your team by Google Drive, email, etc. Each person opens the .dmg and drags the app into Applications. Your logins, spaces and passwords are **not** inside it; everyone starts fresh with their own.
+
+The first time, macOS says it can't check the app (it isn't signed with an Apple Developer ID). Open **System Settings → Privacy & Security**, scroll down and click **Open Anyway**. With an Apple Developer account the app can be signed so this warning goes away.
+
 ### Windows / Linux installers
 
 ```bash
