@@ -1290,6 +1290,7 @@ function zoom(delta) {
 
 function createWindow() {
   win = new BrowserWindow({
+    icon: path.join(__dirname, 'ui', 'icon.png'),
     width: 1400,
     height: 900,
     minWidth: 800,
@@ -1358,6 +1359,9 @@ process.on('uncaughtException', (err) => console.error('[error]', err))
 process.on('unhandledRejection', (err) => console.error('[error]', err))
 
 app.whenReady().then(() => {
+  if (process.platform === 'darwin' && !app.isPackaged) {
+    try { app.dock.setIcon(path.join(__dirname, 'ui', 'icon.png')) } catch {}
+  }
   store = new Store(app.getPath('userData'))
   vault = new PasswordVault(app.getPath('userData'))
   // Lets the extension toolbar in the browser UI show extension icons.

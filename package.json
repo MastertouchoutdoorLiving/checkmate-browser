@@ -32,7 +32,8 @@
       "target": [
         "dir"
       ],
-      "artifactName": "MultiSpace-Browser-${version}.${ext}"
+      "artifactName": "MultiSpace-Browser-${version}.${ext}",
+      "icon": "build/icon.png"
     },
     "win": {
       "target": "nsis"
@@ -41,7 +42,8 @@
       "target": "AppImage"
     },
     "dmg": {
-      "title": "MultiSpace Browser"
+      "title": "MultiSpace Browser",
+      "icon": "build/icon.png"
     }
   }
 }
