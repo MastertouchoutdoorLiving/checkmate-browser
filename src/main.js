@@ -209,21 +209,43 @@ function getRuntime(spaceId) {
 }
 
 // ---------------------------------------------------------------- side panel helper for extension workers
-const SP_SHIM = '__multispace_sidepanel.js'
-const SP_WRAPPER = '__multispace_background.js'
+// File names must not start with "_" (Chrome reserves those and refuses to load the extension).
+const SP_SHIM = 'multispace-sidepanel.js'
+const SP_WRAPPER = 'multispace-background.js'
+const OLD_SHIM = '__multispace_sidepanel.js'
+const OLD_WRAPPER = '__multispace_background.js'
 function patchSidePanelExtension(dir) {
   // Only extensions installed from the Chrome Web Store (never your own unpacked folders).
   if (!path.resolve(dir).startsWith(path.resolve(extensionsPath()) + path.sep)) return false
   try {
     const mf = path.join(dir, 'manifest.json')
     const m = JSON.parse(fs.readFileSync(mf, 'utf8'))
-    const bg = m.background && m.background.service_worker
+    let bg = m.background && m.background.service_worker
+    let changed = false
+    // Undo the first version of this patch (its "__" file names stopped the extension from loading).
+    if (bg === OLD_WRAPPER) {
+      const old = fs.readFileSync(path.join(dir, OLD_WRAPPER), 'utf8')
+      const orig = [...old.matchAll(/['"]\.?\/?([^'"]+)['"]/g)].map((x) => x[1]).find((f) => f !== OLD_SHIM && f !== SP_SHIM)
+      if (orig) {
+        m.background.service_worker = bg = orig
+        fs.writeFileSync(mf, JSON.stringify(m, null, 2))
+        changed = true
+      }
+    }
+    for (const f of [OLD_SHIM, OLD_WRAPPER]) {
+      try {
+        fs.unlinkSync(path.join(dir, f))
+        changed = true
+      } catch {}
+    }
     const usesPanel = m.side_panel || (m.permissions || []).includes('sidePanel')
     if (m.manifest_version !== 3 || !usesPanel || !bg) return false
     const shim = fs.readFileSync(path.join(__dirname, 'ext-shims', 'sidepanel-sw.js'), 'utf8')
     const shimPath = path.join(dir, SP_SHIM)
-    let changed = !fs.existsSync(shimPath) || fs.readFileSync(shimPath, 'utf8') !== shim
-    if (changed) fs.writeFileSync(shimPath, shim)
+    if (!fs.existsSync(shimPath) || fs.readFileSync(shimPath, 'utf8') !== shim) {
+      fs.writeFileSync(shimPath, shim)
+      changed = true
+    }
     if (bg !== SP_WRAPPER) {
       const orig = String(bg).replace(/^\//, '')
       const wrapper =
