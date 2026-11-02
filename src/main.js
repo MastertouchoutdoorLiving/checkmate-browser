@@ -159,7 +159,7 @@ function getRuntime(spaceId) {
         const cfg = sidePanelConfig(spaceId, details.extensionId)
         const at = ba.ctx.store.getActiveTabOfCurrentWindow()
         const popup = at && ba.getPopupUrl(details.extensionId, at.id)
-        if (cfg.path && !popup) return toggleSidePanel(spaceId, details.extensionId)
+        if ((cfg.path || isClaudeExtension(cfg.ext)) && !popup) return toggleSidePanel(spaceId, details.extensionId)
       } catch (err) {
         console.error('side panel:', err)
       }
@@ -544,9 +544,16 @@ function closeSidePanel() {
   layoutViews()
 }
 
+// The Claude extension's own panel can't sign in inside this browser, so its icon opens
+// claude.ai itself in the panel: full login and chat, next to whatever page you're on.
+const CLAUDE_EXT_IDS = new Set(['fcoeoabgfenejglbffodgkkbkcdhcgfn'])
+const CLAUDE_WEB = 'https://claude.ai/new'
+const isClaudeExtension = (ext) => !!ext && (CLAUDE_EXT_IDS.has(ext.id) || /\bclaude\b/i.test(ext.name || ''))
+
 function openSidePanel(spaceId, extId) {
   const cfg = sidePanelConfig(spaceId, extId)
-  if (!cfg.path || !win) return false
+  const webUrl = isClaudeExtension(cfg.ext) ? CLAUDE_WEB : null
+  if ((!cfg.path && !webUrl) || !win) return false
   if (sidePanel && sidePanel.spaceId === spaceId && sidePanel.extId === extId) return true
   closeSidePanel()
   const rt = getRuntime(spaceId)
@@ -555,6 +562,10 @@ function openSidePanel(spaceId, extId) {
   win.contentView.addChildView(view)
   // Links the panel opens go to a normal tab.
   view.webContents.setWindowOpenHandler(({ url }) => {
+    // sign-in pop-ups (Google, Apple) stay as small windows so the login can finish
+    if (/^https:\/\/(accounts\.google\.com|appleid\.apple\.com)\//.test(url)) {
+      return { action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 720, parent: win, autoHideMenuBar: true } }
+    }
     createTab(spaceId, { url })
     return { action: 'deny' }
   })
@@ -563,8 +574,8 @@ function openSidePanel(spaceId, extId) {
   pwc.on('did-fail-load', (_e, code, desc, url) => logExt('panel', `load failed ${code} ${desc} ${url}`))
   pwc.on('preload-error', (_e, p, err) => logExt('panel', `preload ${path.basename(p)}: ${err && err.message}`))
   pwc.on('render-process-gone', (_e, d) => logExt('panel', `crashed: ${d.reason}`))
-  logExt('panel', `open ${extId} ${cfg.path}`)
-  view.webContents.loadURL(`chrome-extension://${extId}/${cfg.path.replace(/^\//, '')}`).catch(() => {})
+  logExt('panel', `open ${extId} ${webUrl || cfg.path}`)
+  view.webContents.loadURL(webUrl || `chrome-extension://${extId}/${cfg.path.replace(/^\//, '')}`).catch(() => {})
   layoutViews()
   return true
 }
