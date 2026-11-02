@@ -49,6 +49,10 @@ Add **iMessage** from **+ Add app**. It shows your conversations and lets you re
 - The first time you send, macOS asks to let it control **Messages**. Click OK.
 - Photos and videos show right in the conversation (click a photo to see it large). iPhone HEIC photos are converted to JPEG on your Mac so they can be shown. Other files (PDFs etc.) show as a chip; click it to see the file in Finder. Reading a message here doesn't mark it as read in Messages.
 
+### New message alerts
+
+The browser plays a beep and shows a Mac notification when a new iMessage comes in, even when the iMessage app isn't open. Clicking the notification opens that conversation. Turn either one off with the bell next to **Inbox**, or in the **Messages** menu. No alert is shown for the conversation you're already reading.
+
 ## Run it
 
 You need [Node.js](https://nodejs.org) 20 or newer.

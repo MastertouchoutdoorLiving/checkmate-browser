@@ -13,6 +13,7 @@ const {
   clipboard,
   net,
   nativeImage,
+  Notification,
 } = require('electron')
 const { pathToFileURL, fileURLToPath } = require('url')
 const path = require('path')
@@ -754,6 +755,19 @@ function registerIpc() {
       return imessage.addContact(c || {})
     })
   )
+  ipcMain.handle('imsg:alerts', imsgOnly(() => imsgAlerts()))
+  ipcMain.handle('imsg:set-alerts', imsgOnly((p) => {
+    const patch = {}
+    if (p && typeof p.sound === 'boolean') patch.sound = p.sound
+    if (p && typeof p.banner === 'boolean') patch.banner = p.banner
+    setImsgAlerts(patch)
+    if (patch.sound) playAlertSound()
+    return imsgAlerts()
+  }))
+  ipcMain.on('imsg:viewing', (e, guid) => {
+    const tab = findTabByWebContents(e.sender)
+    if (tab && tab.internal) imsgOpenChat = guid ? String(guid) : null
+  })
   ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))
   // Favorites and read/unread marks live in the browser (Messages' own database is read-only).
   ipcMain.handle('imsg:prefs', imsgOnly(() => store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} }))
@@ -1188,6 +1202,93 @@ async function readClipboardFiles() {
   return out
 }
 
+// ---------------------------------------------------------------- new iMessage alerts
+// Watches Messages in the background (even when the iMessage app isn't open) and
+// plays a sound and/or shows a Mac notification for each new incoming message.
+const imsgAlertDefaults = { sound: true, banner: true }
+const imsgAlerts = () => ({ ...imsgAlertDefaults, ...(store.state.settings.imsgAlerts || {}) })
+function setImsgAlerts(patch) {
+  store.state.settings.imsgAlerts = { ...imsgAlerts(), ...patch }
+  store.save()
+  buildAppMenu()
+  for (const rt of runtimes.values())
+    for (const t of rt.tabs.values()) if (t.url === IMESSAGE_URL) t.view.webContents.send('imsg:alerts-changed', imsgAlerts())
+}
+function playAlertSound() {
+  if (process.platform === 'darwin') {
+    require('child_process').execFile('afplay', ['/System/Library/Sounds/Glass.aiff'], () => {})
+  } else shell.beep()
+}
+function findImessageApp() {
+  for (const sp of store.state.spaces) {
+    const a = sp.apps.find((x) => x.url === IMESSAGE_URL)
+    if (a) return { spaceId: sp.id, appId: a.id }
+  }
+  return null
+}
+function showImessageChat(guid) {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  const where = findImessageApp()
+  if (!where) return
+  openApp(where.spaceId, where.appId)
+  const t = [...getRuntime(where.spaceId).tabs.values()].find((x) => x.appId === where.appId)
+  if (!t) return
+  const send = () => t.view.webContents.send('imsg:open-chat', guid)
+  if (t.view.webContents.isLoading()) t.view.webContents.once('did-finish-load', () => setTimeout(send, 800))
+  else send()
+}
+// Are you already looking at this conversation? Then no alert.
+let imsgOpenChat = null
+const imsgSeen = new Map() // chat guid -> date of the newest message we know about
+let imsgWatchReady = false
+async function checkNewImessages() {
+  const cfg = imsgAlerts()
+  if (!cfg.sound && !cfg.banner) return
+  let chats
+  try {
+    chats = await imessage.listChats(40)
+  } catch {
+    return
+  }
+  const fresh = []
+  for (const c of chats) {
+    const before = imsgSeen.get(c.guid)
+    imsgSeen.set(c.guid, c.date)
+    if (!imsgWatchReady || c.lastFromMe) continue
+    if (before != null && c.date <= before) continue
+    if (before == null && Date.now() - c.date > 60000) continue
+    const hidden = store.state.settings.imsg?.hidden?.[c.guid]
+    if (hidden && hidden >= c.date) continue
+    const t = activeTab()
+    if (win && win.isFocused() && t && t.url === IMESSAGE_URL && imsgOpenChat === c.guid) continue
+    fresh.push(c)
+  }
+  imsgWatchReady = true
+  if (!fresh.length) return
+  if (cfg.sound) playAlertSound()
+  if (cfg.banner && Notification.isSupported()) {
+    for (const c of fresh.slice(0, 3)) {
+      const n = new Notification({ title: c.title || c.handle || 'New message', body: String(c.last || '').slice(0, 200), silent: true })
+      n.on('click', () => showImessageChat(c.guid))
+      n.show()
+    }
+  }
+}
+async function startImessageWatcher() {
+  if (process.platform !== 'darwin') return
+  try {
+    const st = await imessage.status()
+    if (!st.ok) return setTimeout(startImessageWatcher, 60000) // e.g. Full Disk Access not given yet
+  } catch {
+    return
+  }
+  await checkNewImessages()
+  setInterval(checkNewImessages, 5000)
+}
+
 function buildAppMenu() {
   const send = (channel, ...args) => () => win && win.webContents.send(channel, ...args)
   const isMac = process.platform === 'darwin'
@@ -1274,6 +1375,15 @@ function buildAppMenu() {
           },
         },
         { label: 'Inspect Side Panel', enabled: true, click: () => sidePanel && sidePanel.view.webContents.openDevTools({ mode: 'detach' }) },
+      ],
+    },
+    {
+      label: 'Messages',
+      submenu: [
+        { label: 'Sound for New iMessages', type: 'checkbox', checked: imsgAlerts().sound, click: (m) => setImsgAlerts({ sound: m.checked }) },
+        { label: 'Notification for New iMessages', type: 'checkbox', checked: imsgAlerts().banner, click: (m) => setImsgAlerts({ banner: m.checked }) },
+        { type: 'separator' },
+        { label: 'Play Test Sound', click: playAlertSound },
       ],
     },
     { role: 'windowMenu' },
@@ -1383,6 +1493,7 @@ app.whenReady().then(() => {
   createWindow()
   // Start every space's session in the background so extensions and notifications are ready.
   store.state.spaces.forEach((s) => getRuntime(s.id))
+  setTimeout(startImessageWatcher, 3000)
 })
 
 app.on('before-quit', (e) => {

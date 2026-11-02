@@ -245,3 +245,13 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .tray-item img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .tray-item button { position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; border: 0; background: rgba(43, 38, 32, .75); color: #fff; font-size: 14px; line-height: 1; z-index: 1; }
 #convo.dragging::after { content: 'Drop to add to your message'; position: absolute; inset: 8px; border: 2px dashed var(--accent); border-radius: 18px; background: rgba(242, 107, 58, .06); display: grid; place-items: center; font-weight: 600; color: var(--accent); z-index: 8; pointer-events: none; }
+
+/* new-message alerts toggle */
+.inbox-head { position: relative; }
+.alerts-wrap { margin-left: auto; margin-right: 6px; position: relative; }
+#alerts-slash { display: none; }
+#alerts-btn.off #alerts-slash { display: inline; }
+#alerts-btn.off { opacity: .6; }
+#alerts-menu { position: absolute; right: 0; top: 38px; z-index: 50; background: #fff; border: 1px solid var(--line2); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 8px 10px; min-width: 210px; }
+#alerts-menu label { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-size: 13px; cursor: pointer; white-space: nowrap; }

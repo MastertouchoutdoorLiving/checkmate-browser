@@ -138,6 +138,35 @@ async function boot() {
   } catch {}
   await refreshChats()
   setInterval(refreshChats, 5000)
+  setupAlerts()
+}
+
+// ---- beep / notification for new messages (the browser watches even when this page is closed)
+function showAlerts(a) {
+  $('#al-sound').checked = !!a.sound
+  $('#al-banner').checked = !!a.banner
+  $('#alerts-btn').classList.toggle('off', !a.sound && !a.banner)
+  $('#alerts-btn').title = a.sound || a.banner ? 'Alerts for new messages: on' : 'Alerts for new messages: off'
+}
+async function setupAlerts() {
+  try { showAlerts(await window.imsg.alerts()) } catch {}
+  window.imsg.onAlertsChanged(showAlerts)
+  $('#alerts-btn').addEventListener('click', (e) => {
+    e.stopPropagation()
+    $('#alerts-menu').hidden = !$('#alerts-menu').hidden
+  })
+  document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('.alerts-wrap')) $('#alerts-menu').hidden = true
+  })
+  for (const [id, key] of [['#al-sound', 'sound'], ['#al-banner', 'banner']]) {
+    $(id).addEventListener('change', async (e) => showAlerts(await window.imsg.setAlerts({ [key]: e.target.checked })))
+  }
+  // clicking a notification opens that conversation
+  window.imsg.onOpenChat(async (guid) => {
+    let c = chats.find((x) => x.guid === guid)
+    if (!c) { await refreshChats(); c = chats.find((x) => x.guid === guid) }
+    if (c) { if (isHidden(c)) { delete prefs.hidden[c.guid]; savePrefs() } loadMessages(c, true); renderChats() }
+  })
 }
 
 async function refreshChats() {
@@ -316,6 +345,7 @@ document.addEventListener('mousedown', (e) => {
 
 async function loadMessages(chat, scroll = true) {
   if (scroll) markRead(chat) // opening a conversation reads it
+  if (scroll) window.imsg.viewing(chat.guid)
   if (scroll && current && current.id !== chat.id) clearTray()
   current = chat
   $('#to').hidden = true

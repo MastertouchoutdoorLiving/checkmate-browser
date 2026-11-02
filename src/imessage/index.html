@@ -24,6 +24,15 @@
     <aside id="inbox">
       <div class="inbox-head">
         <h1>Inbox <span id="unread-count"></span></h1>
+        <div class="alerts-wrap">
+          <button id="alerts-btn" class="icon-btn" title="Alerts for new messages">
+            <svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/><path id="alerts-slash" d="M4 4l16 16"/></svg>
+          </button>
+          <div id="alerts-menu" hidden>
+            <label><input type="checkbox" id="al-sound" /> Beep on new message</label>
+            <label><input type="checkbox" id="al-banner" /> Show notification</label>
+          </div>
+        </div>
         <button id="compose" class="icon-btn" title="New message">
           <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>
         </button>
