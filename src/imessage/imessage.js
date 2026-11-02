@@ -139,6 +139,12 @@ async function boot() {
   await refreshChats()
   setInterval(refreshChats, 5000)
   setupAlerts()
+  const unslide = () => {
+    for (const el of [document.documentElement, document.body, $('#app')]) if (el && el.scrollLeft) el.scrollLeft = 0
+  }
+  document.addEventListener('scroll', unslide, true)
+  window.addEventListener('resize', unslide)
+  unslide()
 }
 
 // ---- beep / notification for new messages (the browser watches even when this page is closed)
