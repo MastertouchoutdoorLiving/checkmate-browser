@@ -86,12 +86,21 @@
             <svg viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 01-7.1-7.1l8.5-8.5a3.3 3.3 0 014.7 4.7l-8.5 8.5a1.7 1.7 0 01-2.4-2.4l7.8-7.8"/></svg>
           </button>
           <input id="file-pick" type="file" multiple hidden />
+          <button id="qr-btn" type="button" title="Quick replies (or type / at the start)">
+            <svg viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></svg>
+          </button>
           <textarea id="text" rows="1" placeholder="Write a message…"></textarea>
           <button id="send" type="submit" title="Send (Enter)">
             <svg viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
           </button>
         </div>
-        <div class="composer-hint">Enter to send · Shift+Enter for a new line · Paste or drop pictures to send them</div>
+        <div id="qr-pop" hidden>
+          <div class="qr-head"><b>Quick replies</b><button type="button" id="qr-edit">Edit</button></div>
+          <input id="qr-search" placeholder="Search quick replies" autocomplete="off" />
+          <div id="qr-list"></div>
+          <div id="qr-editor" hidden></div>
+        </div>
+        <div class="composer-hint">Enter to send · Shift+Enter for a new line · Paste or drop pictures · ⚡ or / for quick replies</div>
       </form>
       <div id="error" hidden></div>
     </main>

@@ -139,6 +139,7 @@ async function boot() {
   await refreshChats()
   setInterval(refreshChats, 5000)
   setupAlerts()
+  setupQuickReplies()
   const unslide = () => {
     for (const el of [document.documentElement, document.body, $('#app')]) if (el && el.scrollLeft) el.scrollLeft = 0
   }
@@ -1004,3 +1005,120 @@ $('#to-list').addEventListener('mousedown', (e) => {
 $('#open-privacy').addEventListener('click', () => window.imsg.openPrivacySettings())
 
 boot()
+
+
+// ---- quick replies: ⚡ button or "/" at the start of the message box. {name} becomes the person's first name.
+let qrList = []
+let qrSel = 0
+function qrFill(text) {
+  const c = current && !current.compose ? current : null
+  let first = c && !c.group ? firstName(nameOf(c)) : ''
+  if (isNumberish(first)) first = ''
+  return String(text).replace(/\s*\{name\}/g, first ? ' ' + first : '').replace(/^\s+/, '').replace(/\s+([,!.?])/g, '$1')
+}
+function qrMatches() {
+  const q = $('#qr-search').value.trim().toLowerCase()
+  return qrList.filter((r) => !q || (r.title + ' ' + r.text).toLowerCase().includes(q))
+}
+function qrRender() {
+  const items = qrMatches()
+  if (qrSel >= items.length) qrSel = Math.max(0, items.length - 1)
+  $('#qr-list').innerHTML = items.length
+    ? items.map((r, i) => `<button type="button" class="qr-item ${i === qrSel ? 'sel' : ''}" data-i="${qrList.indexOf(r)}"><b>${esc(r.title || r.text.slice(0, 30))}</b><span>${esc(qrFill(r.text))}</span></button>`).join('')
+    : '<div class="qr-empty">No quick replies yet. Click Edit to add one.</div>'
+}
+function qrOpen(fromSlash) {
+  $('#qr-pop').hidden = false
+  $('#qr-btn').classList.add('on')
+  $('#qr-editor').hidden = true
+  $('#qr-list').hidden = false
+  $('#qr-search').hidden = false
+  $('#qr-edit').textContent = 'Edit'
+  $('#qr-search').value = ''
+  qrSel = 0
+  qrRender()
+  if (!fromSlash) $('#qr-search').focus()
+}
+function qrClose() {
+  $('#qr-pop').hidden = true
+  $('#qr-btn').classList.remove('on')
+}
+function qrUse(r) {
+  const box = $('#text')
+  if (/^\/\S*$/.test(box.value)) box.value = ''
+  box.focus()
+  const text = qrFill(r.text)
+  if (!document.execCommand('insertText', false, text)) box.value += text
+  box.dispatchEvent(new Event('input', { bubbles: true }))
+  qrClose()
+}
+function qrEditor() {
+  const ed = $('#qr-editor')
+  ed.innerHTML = `<div class="qr-tip">Write {name} where the person's first name should go.</div>` +
+    qrList.map((r, i) => `<div class="qr-ed" data-i="${i}"><input class="t" placeholder="Short name, e.g. On my way" value="${esc(r.title)}"/><textarea class="x" rows="2" placeholder="Message">${esc(r.text)}</textarea><button type="button" class="del">Delete</button></div>`).join('') +
+    `<div class="qr-ed-actions"><button type="button" id="qr-add">+ Add quick reply</button><button type="button" id="qr-save" class="primary">Save</button></div>`
+  ed.hidden = false
+  $('#qr-list').hidden = true
+  $('#qr-search').hidden = true
+  $('#qr-edit').textContent = 'Done'
+}
+function qrCollect() {
+  return [...document.querySelectorAll('#qr-editor .qr-ed')].map((d) => ({ title: d.querySelector('.t').value.trim(), text: d.querySelector('.x').value }))
+}
+async function setupQuickReplies() {
+  try { qrList = await window.imsg.quickReplies() } catch {}
+  window.imsg.onQuickReplies((l) => { qrList = l; if (!$('#qr-pop').hidden && $('#qr-editor').hidden) qrRender() })
+  $('#qr-btn').addEventListener('click', () => ($('#qr-pop').hidden ? qrOpen() : qrClose()))
+  $('#qr-search').addEventListener('input', () => { qrSel = 0; qrRender() })
+  $('#qr-list').addEventListener('click', (e) => {
+    const b = e.target.closest('.qr-item')
+    if (b) qrUse(qrList[+b.dataset.i])
+  })
+  const keys = (e) => {
+    if ($('#qr-pop').hidden || !$('#qr-editor').hidden) return
+    const items = qrMatches()
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      qrSel = (qrSel + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % Math.max(1, items.length)
+      qrRender()
+    } else if (e.key === 'Enter' && items[qrSel]) {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      qrUse(items[qrSel])
+    } else if (e.key === 'Escape') {
+      qrClose()
+    }
+  }
+  $('#qr-search').addEventListener('keydown', keys)
+  $('#text').addEventListener('keydown', keys, true)
+  // "/" at the start of the message box opens the list and filters as you type
+  $('#text').addEventListener('input', () => {
+    const v = $('#text').value
+    const m = /^\/(\S*)$/.exec(v)
+    if (m) {
+      if ($('#qr-pop').hidden) qrOpen(true)
+      $('#qr-search').value = m[1]
+      qrSel = 0
+      qrRender()
+    } else if (!$('#qr-pop').hidden && $('#qr-editor').hidden && document.activeElement === $('#text')) qrClose()
+  })
+  const qrSave = async () => {
+    try { qrList = await window.imsg.setQuickReplies(qrCollect()) } catch {}
+    toast('Quick replies saved')
+    qrOpen()
+  }
+  $('#qr-edit').addEventListener('click', () => ($('#qr-editor').hidden ? qrEditor() : qrSave()))
+  $('#qr-editor').addEventListener('click', async (e) => {
+    if (e.target.classList.contains('del')) {
+      e.target.closest('.qr-ed').remove()
+    } else if (e.target.id === 'qr-add') {
+      qrList = qrCollect().concat([{ title: '', text: '' }])
+      qrEditor()
+      const all = document.querySelectorAll('#qr-editor .qr-ed .t')
+      all[all.length - 1]?.focus()
+    } else if (e.target.id === 'qr-save') qrSave()
+  })
+  document.addEventListener('mousedown', (e) => {
+    if (!$('#qr-pop').hidden && !e.target.closest('#qr-pop') && !e.target.closest('#qr-btn') && $('#qr-editor').hidden) qrClose()
+  })
+}

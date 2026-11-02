@@ -773,6 +773,16 @@ function registerIpc() {
     const tab = findTabByWebContents(e.sender)
     if (tab && tab.internal) imsgOpenChat = guid ? String(guid) : null
   })
+  ipcMain.handle('qr:list', (e) => (qrAllowed(e) ? quickReplies() : []))
+  ipcMain.handle('qr:set', (e, list) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    store.state.settings.quickReplies = (Array.isArray(list) ? list : []).slice(0, 60)
+      .map((q) => ({ title: String(q?.title || '').trim().slice(0, 60), text: String(q?.text || '').slice(0, 2000) }))
+      .filter((q) => q.text.trim())
+    store.save()
+    notifyQuickReplies()
+    return quickReplies()
+  })
   ipcMain.on('wa:unread', (e, list) => {
     let h = ''
     try { h = new URL(e.senderFrame ? e.senderFrame.url : e.sender.getURL()).hostname } catch {}
@@ -1222,6 +1232,31 @@ async function readClipboardFiles() {
     out.push({ name: `pasted-${Date.now()}.${best.type.split('/')[1].replace('jpeg', 'jpg')}`, type: best.type, bytes: best.bytes })
   }
   return out
+}
+
+// ---------------------------------------------------------------- quick replies (iMessage + WhatsApp)
+const DEFAULT_QUICK_REPLIES = [
+  { title: 'On my way', text: "Hi {name}! I'm on my way, I'll be there in about 20 minutes." },
+  { title: 'Running late', text: "Hi {name}, sorry, I'm running about 15 minutes late. See you soon!" },
+  { title: 'Estimate sent', text: 'Hi {name}! I just sent your estimate. Let me know if you have any questions.' },
+  { title: 'Ask for details', text: 'Could you please send me your full name, address and email?' },
+  { title: 'Thank you', text: 'Thank you for choosing Master Touch Pools! 🙏' },
+  { title: 'Ask for a review', text: "If you're happy with our work, a quick Google review would mean a lot to us. Thank you!" },
+]
+const quickReplies = () => (Array.isArray(store.state.settings.quickReplies) ? store.state.settings.quickReplies : DEFAULT_QUICK_REPLIES)
+function qrAllowed(e) {
+  const tab = findTabByWebContents(e.sender)
+  if (tab && tab.internal) return true
+  let h = ''
+  try { h = new URL(e.senderFrame ? e.senderFrame.url : e.sender.getURL()).hostname } catch {}
+  return h === 'web.whatsapp.com' && !(e.senderFrame && e.senderFrame.parent)
+}
+function notifyQuickReplies() {
+  for (const rt of runtimes.values())
+    for (const t of rt.tabs.values()) {
+      if (t.view.webContents.isDestroyed()) continue
+      if (t.internal || hostOf(t.url) === 'web.whatsapp.com') t.view.webContents.send('qr:changed', quickReplies())
+    }
 }
 
 // ---------------------------------------------------------------- one "Unread" view

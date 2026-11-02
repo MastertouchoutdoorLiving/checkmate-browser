@@ -424,3 +424,141 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     }
   })
 }
+
+// ---------------------------------------------------------------- WhatsApp: quick replies
+// A "⚡ Quick replies" button above "Save contact". Click a reply to put it in the message box
+// ({name} becomes the person's first name). The same list is used in the iMessage app.
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  let qhost, qroot, list = []
+  const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+  const chatName = () => {
+    const head = document.querySelector('#main header')
+    const t = ((head && (head.querySelector('span[dir="auto"]') || head.querySelector('span[title]'))) || {}).textContent || ''
+    if (!t || /^[+\d(][\d\s()+\-.]*$/.test(t.trim())) return ''
+    return t.trim().split(/[\s,]+/)[0]
+  }
+  const fill = (text) => {
+    const first = chatName()
+    return String(text).replace(/\s*\{name\}/g, first ? ' ' + first : '').replace(/^\s+/, '').replace(/\s+([,!.?])/g, '$1')
+  }
+  const load = async () => {
+    try { list = (await ipcRenderer.invoke('qr:list')) || [] } catch {}
+  }
+  ipcRenderer.on('qr:changed', (_e, l) => { list = l || []; if (qroot && !qroot.querySelector('.pop').hidden && qroot.querySelector('.ed').hidden) renderList() })
+  function insert(text) {
+    const box = document.querySelector('#main footer div[contenteditable="true"]') || document.querySelector('footer div[contenteditable="true"]')
+    if (!box) return
+    box.focus()
+    const sel = window.getSelection()
+    const r = document.createRange()
+    r.selectNodeContents(box)
+    r.collapse(false)
+    sel.removeAllRanges()
+    sel.addRange(r)
+    if (!document.execCommand('insertText', false, text)) {
+      box.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: text, bubbles: true, cancelable: true }))
+    }
+  }
+  function renderList() {
+    const q = qroot.querySelector('.q').value.trim().toLowerCase()
+    const items = list.map((r, i) => [r, i]).filter(([r]) => !q || (r.title + ' ' + r.text).toLowerCase().includes(q))
+    qroot.querySelector('.list').innerHTML = items.length
+      ? items.map(([r, i]) => `<button class="it" data-i="${i}"><b>${escH(r.title || r.text.slice(0, 30))}</b><span>${escH(fill(r.text))}</span></button>`).join('')
+      : '<div class="empty">No quick replies yet. Click Edit to add one.</div>'
+  }
+  function renderEditor() {
+    const ed = qroot.querySelector('.ed')
+    ed.innerHTML = '<div class="tip">Write {name} where the person\'s first name should go.</div>' +
+      list.map((r) => `<div class="row"><input class="t" placeholder="Short name, e.g. On my way" value="${escH(r.title)}"/><textarea class="x" rows="2" placeholder="Message">${escH(r.text)}</textarea><button class="del">Delete</button></div>`).join('') +
+      '<div class="acts"><button class="add">+ Add quick reply</button><button class="save">Save</button></div>'
+  }
+  const collect = () => [...qroot.querySelectorAll('.ed .row')].map((d) => ({ title: d.querySelector('.t').value.trim(), text: d.querySelector('.x').value }))
+  function showMode(edit) {
+    qroot.querySelector('.ed').hidden = !edit
+    qroot.querySelector('.list').hidden = edit
+    qroot.querySelector('.q').hidden = edit
+    qroot.querySelector('.edit').textContent = edit ? 'Done' : 'Edit'
+    if (edit) renderEditor()
+    else renderList()
+  }
+  function ensureQr() {
+    if (qhost && document.body.contains(qhost)) return
+    qhost = document.createElement('div')
+    qhost.id = '__ms_wa_quick'
+    qroot = qhost.attachShadow({ mode: 'closed' })
+    qroot.innerHTML = `<style>
+      *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
+      .btn{position:fixed;right:24px;bottom:128px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
+      .btn:hover{background:#f0f2f5}
+      .pop{position:fixed;right:24px;bottom:172px;z-index:2147483647;width:380px;max-height:60vh;display:flex;flex-direction:column;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:10px;color:#111b21;font-size:13px}
+      .head{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 8px}
+      button{cursor:pointer;font-size:12.5px}
+      .head button,.acts button{border:1px solid #d1d7db;background:#fff;border-radius:8px;padding:4px 10px}
+      .q{border:1px solid #d1d7db;border-radius:8px;padding:7px 9px;font-size:13px;margin-bottom:6px;outline:none}
+      .list,.ed{overflow-y:auto;min-height:0}
+      .it{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px}
+      .it:hover{background:#f0f2f5}
+      .it b{display:block;font-size:13px}.it span{display:block;color:#667781;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .empty,.tip{color:#667781;padding:6px 4px 10px;font-size:12px}
+      .row{border:1px solid #e9edef;border-radius:10px;padding:8px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
+      .row input,.row textarea{border:1px solid #d1d7db;border-radius:8px;padding:6px 8px;font-size:13px;resize:vertical}
+      .del{align-self:flex-end;border:0;background:none;color:#d93025}
+      .acts{display:flex;justify-content:space-between;padding-top:4px}
+      .acts .save{background:#00a884;color:#fff;border-color:#00a884}
+      [hidden]{display:none!important}
+    </style>
+    <button class="btn" hidden>⚡ Quick replies</button>
+    <div class="pop" hidden>
+      <div class="head"><b>Quick replies</b><button class="edit">Edit</button></div>
+      <input class="q" placeholder="Search quick replies"/>
+      <div class="list"></div>
+      <div class="ed" hidden></div>
+    </div>`
+    const pop = qroot.querySelector('.pop')
+    qroot.querySelector('.btn').addEventListener('click', async () => {
+      if (!pop.hidden) return (pop.hidden = true)
+      await load()
+      qroot.querySelector('.q').value = ''
+      showMode(false)
+      pop.hidden = false
+      qroot.querySelector('.q').focus()
+    })
+    qroot.querySelector('.q').addEventListener('input', renderList)
+    qroot.querySelector('.q').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') pop.hidden = true
+      if (e.key === 'Enter') qroot.querySelector('.it')?.click()
+    })
+    qroot.querySelector('.list').addEventListener('click', (e) => {
+      const b = e.target.closest('.it')
+      if (!b) return
+      pop.hidden = true
+      insert(fill(list[+b.dataset.i].text))
+    })
+    const saveEd = async () => {
+      try { list = (await ipcRenderer.invoke('qr:set', collect())) || [] } catch {}
+      showMode(false)
+    }
+    qroot.querySelector('.edit').addEventListener('click', () => (qroot.querySelector('.ed').hidden ? showMode(true) : saveEd()))
+    qroot.querySelector('.ed').addEventListener('click', async (e) => {
+      const t = e.target
+      if (t.classList.contains('del')) t.closest('.row').remove()
+      else if (t.classList.contains('add')) {
+        list = collect().concat([{ title: '', text: '' }])
+        renderEditor()
+        const all = qroot.querySelectorAll('.ed .t')
+        all[all.length - 1]?.focus()
+      } else if (t.classList.contains('save')) saveEd()
+    })
+    // WhatsApp's own shortcuts shouldn't fire while typing in our boxes
+    for (const ev of ['keydown', 'keypress', 'keyup']) qroot.addEventListener(ev, (e) => e.stopPropagation())
+    document.addEventListener('mousedown', (e) => {
+      if (!pop.hidden && !e.composedPath().includes(qhost) && qroot.querySelector('.ed').hidden) pop.hidden = true
+    }, true)
+    document.body.appendChild(qhost)
+  }
+  setInterval(() => {
+    if (!document.body) return
+    ensureQr()
+    qroot.querySelector('.btn').hidden = !document.querySelector('#main footer')
+  }, 1000)
+}
