@@ -351,3 +351,76 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     root.querySelector('.btn').hidden = !show
   }, 1000)
 }
+
+// ---------------------------------------------------------------- WhatsApp: unread chats for the "Unread" view
+// Reads the chat list (name, last message, unread count) and reports it to the browser.
+// The browser can also ask this page to open a chat by name.
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  const UNREAD_RE = /unread|não lida|nao lida|no leíd|no leid/i
+  const isGreen = (el) => {
+    const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(el).backgroundColor || '')
+    return m && +m[2] > 140 && +m[2] > +m[1] + 60 && +m[2] > +m[3] + 20
+  }
+  const rowsOf = () => {
+    const pane = document.querySelector('#pane-side') || document.querySelector('[aria-label="Chat list"]') || document.querySelector('[aria-label="Lista de conversas"]')
+    if (!pane) return []
+    const rows = pane.querySelectorAll('[role="listitem"], [role="row"]')
+    return [...rows].filter((r) => !r.parentElement.closest('[role="listitem"], [role="row"]'))
+  }
+  const nameOf = (row) => {
+    const t = row.querySelector('span[title][dir="auto"]') || row.querySelector('span[title]')
+    return t ? (t.getAttribute('title') || t.textContent || '').trim() : ''
+  }
+  function readUnread() {
+    const out = []
+    for (const row of rowsOf()) {
+      const name = nameOf(row)
+      if (!name) continue
+      let count = 0
+      let found = false
+      for (const el of row.querySelectorAll('[aria-label]')) {
+        const label = el.getAttribute('aria-label') || ''
+        if (UNREAD_RE.test(label)) {
+          found = true
+          count = parseInt((/\d+/.exec(label) || /\d+/.exec(el.textContent || '') || ['0'])[0], 10) || count
+        }
+      }
+      if (!found) {
+        for (const el of row.querySelectorAll('span')) {
+          if (/^\d{1,3}$/.test((el.textContent || '').trim()) && el.children.length === 0 && isGreen(el.parentElement || el)) {
+            found = true
+            count = parseInt(el.textContent, 10)
+          }
+        }
+      }
+      if (!found) continue
+      const titled = [...row.querySelectorAll('span[title]')].map((s) => (s.getAttribute('title') || '').trim()).filter((t) => t && t !== name)
+      const preview = titled[titled.length - 1] || ''
+      const time = ([...row.querySelectorAll('div, span')].map((e) => (e.children.length ? '' : (e.textContent || '').trim())).find((t) => /^(\d{1,2}:\d{2}(\s?[AP]M)?|yesterday|ontem|today|hoje|\d{1,2}\/\d{1,2}\/\d{2,4}|mon|tue|wed|thu|fri|sat|sun|monday|tuesday|wednesday|thursday|friday|saturday|sunday|segunda|terça|quarta|quinta|sexta|sábado|domingo)/i.test(t)) || '')
+      out.push({ name: name.slice(0, 120), preview: preview.slice(0, 200), count, time: time.slice(0, 20) })
+    }
+    return out.slice(0, 50)
+  }
+  let lastSent = ''
+  setInterval(() => {
+    let list = []
+    try { list = readUnread() } catch {}
+    const sig = JSON.stringify(list)
+    if (sig !== lastSent) {
+      lastSent = sig
+      ipcRenderer.send('wa:unread', list)
+    }
+  }, 3000)
+  ipcRenderer.on('wa:open-chat', async (_e, name) => {
+    const want = String(name || '')
+    const click = (row) => {
+      const target = row.querySelector('[tabindex]') || row
+      for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }))
+    }
+    for (let i = 0; i < 10; i++) {
+      const row = rowsOf().find((r) => nameOf(r) === want)
+      if (row) return click(row)
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  })
+}

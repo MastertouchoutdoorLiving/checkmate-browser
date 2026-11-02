@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:" />
+<title>Unread</title>
+<link rel="stylesheet" href="inbox.css" />
+</head>
+<body>
+  <div id="wrap">
+    <header>
+      <h1>Unread <span id="total"></span></h1>
+      <div id="filters">
+        <button data-f="all" class="on">All</button>
+        <button data-f="imsg">iMessage</button>
+        <button data-f="wa">WhatsApp</button>
+        <button data-f="app">Other apps</button>
+      </div>
+    </header>
+    <div id="notes"></div>
+    <div id="list"></div>
+  </div>
+  <script src="inbox.js"></script>
+</body>
+</html>

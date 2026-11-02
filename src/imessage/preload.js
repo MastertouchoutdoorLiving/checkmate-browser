@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('imsg', {
   openUrl: (url) => ipcRenderer.send('imsg:open-url', url),
   openInMessages: (handle) => ipcRenderer.send('imsg:open-messages', handle),
   openPrivacySettings: () => ipcRenderer.send('imsg:open-privacy'),
+  unifiedList: () => ipcRenderer.invoke('unified:list'),
+  unifiedOpen: (it) => ipcRenderer.invoke('unified:open', it),
   alerts: () => ipcRenderer.invoke('imsg:alerts'),
   setAlerts: (p) => ipcRenderer.invoke('imsg:set-alerts', p),
   viewing: (guid) => ipcRenderer.send('imsg:viewing', guid || null),

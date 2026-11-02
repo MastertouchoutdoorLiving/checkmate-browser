@@ -31,7 +31,8 @@ const imessage = require('./imessage')
 
 // Built-in pages that aren't websites.
 const IMESSAGE_URL = 'internal:imessage'
-const isInternal = (url) => url === IMESSAGE_URL
+const INBOX_URL = 'internal:unread'
+const isInternal = (url) => url === IMESSAGE_URL || url === INBOX_URL
 
 app.setName('MultiSpace Browser')
 // Hide Chromium's internal log noise (STUN lookups, Bluetooth/passkey probes) from the Terminal.
@@ -352,7 +353,7 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true }
   const view = new WebContentsView({
     webPreferences: internal
       ? {
-          // Built-in iMessage page: its own session, no extensions, only the iMessage bridge.
+          // Built-in pages (iMessage, Unread): their own session, no extensions, only the built-in bridge.
           partition: 'internal-pages',
           preload: path.join(__dirname, 'imessage', 'preload.js'),
           sandbox: true,
@@ -386,7 +387,7 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true }
   win.contentView.addChildView(view)
   view.setVisible(false)
 
-  if (internal) view.webContents.loadFile(path.join(__dirname, 'imessage', 'index.html')).catch(() => {})
+  if (internal) view.webContents.loadFile(tab.url === INBOX_URL ? path.join(__dirname, 'inbox', 'index.html') : path.join(__dirname, 'imessage', 'index.html')).catch(() => {})
   // Wait until the space's extensions are loaded so content scripts run on the first page.
   else Promise.resolve(rt.ready).finally(() => view.webContents.loadURL(tab.url).catch(() => {}))
 
@@ -664,7 +665,7 @@ function snapshot() {
   return {
     activeSpaceId: s.activeSpaceId,
     settings: s.settings,
-    catalog: CATALOG.filter((c) => !isInternal(c.url) || process.platform === 'darwin' || process.env.MULTISPACE_TEST_CHATDB),
+    catalog: CATALOG.filter((c) => c.url !== IMESSAGE_URL || process.platform === 'darwin' || process.env.MULTISPACE_TEST_CHATDB),
     colors: COLORS,
     spaces: s.spaces.map((space) => {
       const rt = runtimes.get(space.id)
@@ -686,7 +687,7 @@ function snapshot() {
             }
           })
         : []
-      const unread = tabs.reduce((n, t) => n + Math.max(0, t.badge), 0)
+      const unread = tabs.filter((t) => t.url !== INBOX_URL).reduce((n, t) => n + Math.max(0, t.badge), 0)
       return {
         id: space.id,
         name: space.name,
@@ -768,6 +769,23 @@ function registerIpc() {
     const tab = findTabByWebContents(e.sender)
     if (tab && tab.internal) imsgOpenChat = guid ? String(guid) : null
   })
+  ipcMain.on('wa:unread', (e, list) => {
+    let h = ''
+    try { h = new URL(e.senderFrame ? e.senderFrame.url : e.sender.getURL()).hostname } catch {}
+    if (h !== 'web.whatsapp.com' || (e.senderFrame && e.senderFrame.parent)) return
+    const tab = findTabByWebContents(e.sender)
+    if (!tab) return
+    const clean = (Array.isArray(list) ? list : []).slice(0, 50).map((c) => ({
+      name: String(c?.name || '').slice(0, 120), preview: String(c?.preview || '').slice(0, 200), count: Math.max(0, Number(c?.count) | 0), time: String(c?.time || '').slice(0, 20),
+    })).filter((c) => c.name)
+    waUnread.set(e.sender.id, { spaceId: tab.spaceId, tabId: tab.id, list: clean })
+    if (!e.sender._msUnreadHook) {
+      e.sender._msUnreadHook = true
+      e.sender.once('destroyed', () => waUnread.delete(e.sender.id))
+    }
+  })
+  ipcMain.handle('unified:list', imsgOnly(() => unifiedList()))
+  ipcMain.handle('unified:open', imsgOnly((it) => openUnified(it)))
   ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))
   // Favorites and read/unread marks live in the browser (Messages' own database is read-only).
   ipcMain.handle('imsg:prefs', imsgOnly(() => store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} }))
@@ -1202,6 +1220,66 @@ async function readClipboardFiles() {
   return out
 }
 
+// ---------------------------------------------------------------- one "Unread" view
+// iMessage (from the Messages database), WhatsApp (read from its chat list) and every other
+// app's unread count (Quo, Gmail, Slack… from the number in its tab title), in one list.
+const waUnread = new Map() // webContents id -> { spaceId, tabId, list }
+function imsgIsUnread(c, p) {
+  if (p.manualUnread?.[c.guid]) return true
+  if (!c.unread || c.lastFromMe) return false
+  return !(p.readUpTo?.[c.guid] >= c.date)
+}
+async function unifiedList() {
+  const items = []
+  let imsgState = 'off'
+  if (process.platform === 'darwin' || process.env.MULTISPACE_TEST_CHATDB) {
+    try {
+      const st = await imessage.status()
+      if (st.ok) {
+        imsgState = 'ok'
+        const p = store.state.settings.imsg || {}
+        for (const c of await imessage.listChats(120)) {
+          if (p.hidden?.[c.guid] >= c.date || !imsgIsUnread(c, p)) continue
+          items.push({ kind: 'imsg', key: 'i:' + c.guid, guid: c.guid, name: c.title || c.handle, preview: c.last, count: c.unread || 0, date: c.date })
+        }
+      } else imsgState = 'no-access'
+    } catch {
+      imsgState = 'error'
+    }
+  }
+  const apps = []
+  let waOpen = false
+  for (const sp of store.state.spaces) {
+    const rt = runtimes.get(sp.id)
+    if (!rt) continue
+    for (const t of rt.tabs.values()) {
+      if (t.internal || t.view.webContents.isDestroyed()) continue
+      const host = hostOf(t.url)
+      const app = t.appId ? sp.apps.find((a) => a.id === t.appId) : null
+      if (host === 'web.whatsapp.com') {
+        waOpen = true
+        const w = waUnread.get(t.view.webContents.id)
+        for (const c of (w && w.list) || [])
+          items.push({ kind: 'wa', key: `w:${t.id}:${c.name}`, spaceId: sp.id, tabId: t.id, name: c.name, preview: c.preview, count: c.count, time: c.time, space: sp.name })
+        continue
+      }
+      if (t.badge) apps.push({ kind: 'app', key: `a:${t.id}`, spaceId: sp.id, tabId: t.id, name: app ? app.name : String(t.title || host).replace(/^\s*[*•]\s*/, '').replace(/\(\d+\+?\)\s*/, '').trim() || host, count: t.badge, space: sp.name, favicon: t.favicon || (app && app.icon) || null })
+    }
+  }
+  items.sort((a, b) => (b.date || 0) - (a.date || 0))
+  return { items: items.concat(apps), imsgState, waOpen, multiSpace: store.state.spaces.length > 1 }
+}
+function openUnified(it) {
+  if (!it || typeof it !== 'object') return
+  if (it.kind === 'imsg') return showImessageChat(String(it.guid || ''))
+  const rt = runtimes.get(String(it.spaceId))
+  const t = rt && rt.tabs.get(Number(it.tabId))
+  if (!t) return
+  if (store.state.activeSpaceId !== t.spaceId) activateSpace(t.spaceId)
+  selectTab(t.spaceId, t.id)
+  if (it.kind === 'wa') t.view.webContents.send('wa:open-chat', String(it.name || ''))
+}
+
 // ---------------------------------------------------------------- new iMessage alerts
 // Watches Messages in the background (even when the iMessage app isn't open) and
 // plays a sound and/or shows a Mac notification for each new incoming message.
@@ -1494,6 +1572,18 @@ app.whenReady().then(() => {
   // Start every space's session in the background so extensions and notifications are ready.
   store.state.spaces.forEach((s) => getRuntime(s.id))
   setTimeout(startImessageWatcher, 3000)
+  if (!store.state.settings.unreadAppAdded) {
+    store.state.settings.unreadAppAdded = true
+    const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]
+    if (sp && !sp.apps.some((a) => a.url === INBOX_URL)) {
+      const c = CATALOG.find((x) => x.url === INBOX_URL)
+      const a = store.addApp(sp.id, c)
+      sp.apps.splice(sp.apps.indexOf(a), 1)
+      sp.apps.unshift(a)
+      store.save()
+      pushState()
+    }
+  }
 })
 
 app.on('before-quit', (e) => {

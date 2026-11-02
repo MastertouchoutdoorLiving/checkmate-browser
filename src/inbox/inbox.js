@@ -1,0 +1,106 @@
+// "Unread": new iMessage, WhatsApp and other-app messages in one list. Click one to open it.
+const $ = (s) => document.querySelector(s)
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+let filter = 'all'
+let data = { items: [] }
+let byKey = new Map()
+
+const SRC = {
+  imsg: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#fff" d="M12 4C6.9 4 3 7.3 3 11.3c0 2.3 1.3 4.4 3.4 5.7-.2 1.3-.8 2.4-1.8 3.2 1.8.1 3.5-.5 4.8-1.6.8.2 1.7.3 2.6.3 5.1 0 9-3.3 9-7.6S17.1 4 12 4z"/></svg>',
+  wa: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#fff" d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3zm4.6 12.4c-.2.6-1.1 1.1-1.6 1.2-.4.1-1 .1-1.6-.1-.4-.1-.8-.3-1.4-.5-2.5-1.1-4.1-3.6-4.2-3.8-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.7 1.2 1.5 1.9 1 .9 1.9 1.2 2.1 1.3.3.1.4.1.6-.1l.8-1c.2-.3.4-.2.6-.1l1.8.9c.3.1.4.2.5.3.1.2.1.6-.1 1.2z"/></svg>',
+}
+const LABEL = { imsg: 'iMessage', wa: 'WhatsApp', app: 'Other apps' }
+
+function when(it) {
+  if (it.time) return it.time
+  if (!it.date) return ''
+  const d = new Date(it.date)
+  const today = new Date()
+  if (d.toDateString() === today.toDateString()) return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const y = new Date(today - 864e5)
+  if (d.toDateString() === y.toDateString()) return 'Yesterday'
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
+function row(it) {
+  const icon = it.kind === 'app'
+    ? (it.favicon ? `<img src="${esc(it.favicon)}" alt="">` : esc((it.name || '?')[0].toUpperCase()))
+    : SRC[it.kind]
+  const where = it.kind === 'imsg' ? 'iMessage' : it.kind === 'wa' ? 'WhatsApp' : ''
+  const space = data.multiSpace && it.space ? ` · ${esc(it.space)}` : ''
+  const preview = it.kind === 'app'
+    ? (it.count > 0 ? `${it.count} unread` : 'New activity')
+    : esc(it.preview || '')
+  const count = it.count > 0 ? `<span class="count">${it.count > 99 ? '99+' : it.count}</span>` : ''
+  return `<button class="item" data-k="${esc(it.key)}">
+    <span class="src ${it.kind}">${icon}</span>
+    <span class="body">
+      <span class="top"><span class="name">${esc(it.name)}</span><span class="where">${where}${space}</span><span class="time">${esc(when(it))}</span></span>
+      <span class="preview">${preview}</span>
+    </span>${count}</button>`
+}
+
+function render() {
+  const items = data.items || []
+  byKey = new Map(items.map((i) => [i.key, i]))
+  const n = (k) => items.filter((i) => k === 'all' || i.kind === k).length
+  document.querySelectorAll('#filters button').forEach((b) => {
+    b.classList.toggle('on', b.dataset.f === filter)
+    const c = n(b.dataset.f)
+    b.innerHTML = `${b.dataset.f === 'all' ? 'All' : LABEL[b.dataset.f]}${c ? `<span class="n">${c}</span>` : ''}`
+  })
+  const total = items.length
+  $('#total').textContent = total || ''
+  document.title = total ? `Unread (${total})` : 'Unread'
+
+  const notes = []
+  if (data.imsgState === 'no-access') notes.push('iMessage is not connected yet. Open the iMessage app once to set it up.')
+  if (!data.waOpen && (filter === 'all' || filter === 'wa')) notes.push('WhatsApp shows up here while it is open in the browser. Open WhatsApp once and leave it signed in.')
+  $('#notes').innerHTML = notes.map((t) => `<div class="note">${esc(t)}</div>`).join('')
+
+  const shown = items.filter((i) => filter === 'all' || i.kind === filter)
+  if (!shown.length) {
+    $('#list').innerHTML = '<div class="empty"><b>🎉</b>Nothing unread. You\'re all caught up.</div>'
+    return
+  }
+  let html = ''
+  for (const k of ['imsg', 'wa', 'app']) {
+    const group = shown.filter((i) => i.kind === k)
+    if (!group.length) continue
+    if (filter === 'all') html += `<div class="sec">${LABEL[k]}</div>`
+    html += group.map(row).join('')
+  }
+  $('#list').innerHTML = html
+}
+
+async function refresh() {
+  try {
+    data = await window.imsg.unifiedList()
+  } catch {
+    return
+  }
+  render()
+}
+
+$('#filters').addEventListener('click', (e) => {
+  const b = e.target.closest('button')
+  if (!b) return
+  filter = b.dataset.f
+  render()
+})
+$('#list').addEventListener('click', (e) => {
+  const b = e.target.closest('.item')
+  const it = b && byKey.get(b.dataset.k)
+  if (!it) return
+  window.imsg.unifiedOpen({ kind: it.kind, guid: it.guid, spaceId: it.spaceId, tabId: it.tabId, name: it.name })
+  setTimeout(refresh, 2500)
+})
+window.addEventListener('focus', refresh)
+refresh()
+setInterval(refresh, 4000)
+// an app icon that can't load falls back to its first letter
+$('#list').addEventListener('error', (e) => {
+  if (e.target.tagName !== 'IMG') return
+  const it = byKey.get(e.target.closest('.item')?.dataset.k)
+  e.target.replaceWith(document.createTextNode(((it && it.name) || '?')[0].toUpperCase()))
+}, true)

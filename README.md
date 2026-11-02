@@ -53,6 +53,16 @@ Add **iMessage** from **+ Add app**. It shows your conversations and lets you re
 
 The browser plays a beep and shows a Mac notification when a new iMessage comes in, even when the iMessage app isn't open. Clicking the notification opens that conversation. Turn either one off with the bell next to **Inbox**, or in the **Messages** menu. No alert is shown for the conversation you're already reading.
 
+## Unread (everything in one list)
+
+The **Unread** app (first in the apps panel) shows every unread conversation in one place:
+
+- **iMessage:** each unread conversation, with the last message.
+- **WhatsApp:** each unread chat from WhatsApp's chat list, while WhatsApp is open in the browser.
+- **Other apps:** Quo, Gmail, Slack and others show how many unread they have, when the site puts the number in its tab title.
+
+Click a row to jump straight to that conversation or app.
+
 ## Run it
 
 You need [Node.js](https://nodejs.org) 20 or newer.
