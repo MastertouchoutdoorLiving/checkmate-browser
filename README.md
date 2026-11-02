@@ -58,13 +58,23 @@ npm install
 npm start
 ```
 
-### Build an installer
+### Install it as a normal Mac app (no Terminal needed afterwards)
+
+```bash
+npm run install-mac
+```
+
+This builds **MultiSpace Browser.app**, puts it in **Applications** and opens it. From then on, open it from Launchpad, Applications or the Dock (right-click its Dock icon → Options → Keep in Dock). Your spaces, logins and passwords carry over. To update later, unzip the new version and run the same command again.
+
+For iMessage, give **MultiSpace Browser** (instead of Terminal) Full Disk Access in System Settings → Privacy & Security.
+
+### Windows / Linux installers
 
 ```bash
 npm run dist
 ```
 
-This produces a `.dmg` on macOS, an `.exe` installer on Windows, or an AppImage on Linux in the `dist/` folder. (Build each platform on that platform. The installers are unsigned, so macOS and Windows will warn the first time you open them.)
+Builds an `.exe` installer on Windows or an AppImage on Linux in `dist/` (build each platform on that platform).
 
 ## Keyboard shortcuts
 

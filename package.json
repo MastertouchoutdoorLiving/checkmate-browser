@@ -6,7 +6,8 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "install-mac": "bash scripts/install-mac.sh"
   },
   "license": "MIT",
   "dependencies": {
@@ -26,7 +27,10 @@
       "package.json"
     ],
     "mac": {
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "target": [
+        "dir"
+      ]
     },
     "win": {
       "target": "nsis"
