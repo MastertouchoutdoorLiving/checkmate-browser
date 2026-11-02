@@ -2,7 +2,7 @@
   "name": "multispace-browser",
   "productName": "MultiSpace Browser",
   "version": "0.1.0",
-  "description": "A Chromium-based browser with multiple isolated accounts (spaces), pinned web apps, and Chrome extension support.",
+  "description": "CheckMate Browser: spaces, apps, iMessage and WhatsApp in one window",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
@@ -32,8 +32,11 @@
       "target": [
         "dir"
       ],
-      "artifactName": "MultiSpace-Browser-${version}.${ext}",
-      "icon": "build/icon.png"
+      "artifactName": "CheckMate-Browser-${version}.${ext}",
+      "icon": "build/icon.png",
+      "extendInfo": {
+        "CFBundleDisplayName": "CheckMate Browser"
+      }
     },
     "win": {
       "target": "nsis"
@@ -42,7 +45,7 @@
       "target": "AppImage"
     },
     "dmg": {
-      "title": "MultiSpace Browser",
+      "title": "CheckMate Browser",
       "icon": "build/icon.png"
     }
   }

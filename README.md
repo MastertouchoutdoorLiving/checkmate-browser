@@ -1,4 +1,4 @@
-# MultiSpace Browser
+# CheckMate Browser
 
 A desktop browser for people who juggle several accounts, inspired by the "spaces + apps" layout of tools like Shift.
 It runs on Chromium (through Electron), so sites behave the way they do in Chrome, and it can install **Chrome extensions straight from the Chrome Web Store**.
@@ -45,7 +45,7 @@ Add **iMessage** from **+ Add app**. It shows your conversations and lets you re
 - **Swipe left to delete:** swipe a conversation left with two fingers on the trackpad (or drag it with the mouse) to show **Read/Unread** and **Delete**. A long swipe deletes right away, and **Undo** brings it back. Deleting removes it from this browser's list only (it comes back if they message again); it doesn't delete it from your iPhone or the Messages app.
 - People who aren't in your Contacts but shared their name and photo with you show as their shared name with a **Maybe** tag, like in the Messages app. Phone numbers are shown as +1 (954) 804-5573.
 
-- The first time, macOS needs to allow the browser to read your Messages history: System Settings → Privacy & Security → **Full Disk Access** → turn on **Terminal** (or **MultiSpace Browser** if you installed it as an app), then restart the browser.
+- The first time, macOS needs to allow the browser to read your Messages history: System Settings → Privacy & Security → **Full Disk Access** → turn on **Terminal** (or **CheckMate Browser** if you installed it as an app), then restart the browser.
 - The first time you send, macOS asks to let it control **Messages**. Click OK.
 - Photos and videos show right in the conversation (click a photo to see it large). iPhone HEIC photos are converted to JPEG on your Mac so they can be shown. Other files (PDFs etc.) show as a chip; click it to see the file in Finder. Reading a message here doesn't mark it as read in Messages.
 
@@ -78,9 +78,9 @@ npm start
 npm run install-mac
 ```
 
-This builds **MultiSpace Browser.app**, puts it in **Applications** and opens it. From then on, open it from Launchpad, Applications or the Dock (right-click its Dock icon → Options → Keep in Dock). Your spaces, logins and passwords carry over. To update later, unzip the new version and run the same command again.
+This builds **CheckMate Browser.app**, puts it in **Applications** and opens it. From then on, open it from Launchpad, Applications or the Dock (right-click its Dock icon → Options → Keep in Dock). Your spaces, logins and passwords carry over. To update later, unzip the new version and run the same command again.
 
-For iMessage, give **MultiSpace Browser** (instead of Terminal) Full Disk Access in System Settings → Privacy & Security.
+For iMessage, give **CheckMate Browser** (instead of Terminal) Full Disk Access in System Settings → Privacy & Security.
 
 ### Give it to your team (Mac)
 

@@ -34,7 +34,11 @@ const IMESSAGE_URL = 'internal:imessage'
 const INBOX_URL = 'internal:unread'
 const isInternal = (url) => url === IMESSAGE_URL || url === INBOX_URL
 
+// The app is shown as "CheckMate Browser". Its internal name stays "MultiSpace Browser" on purpose:
+// that name picks the data folder and the Keychain key, so your logins and passwords carry over.
+const DISPLAY_NAME = 'CheckMate Browser'
 app.setName('MultiSpace Browser')
+app.setAboutPanelOptions({ applicationName: DISPLAY_NAME })
 // Hide Chromium's internal log noise (STUN lookups, Bluetooth/passkey probes) from the Terminal.
 // Real crashes are still reported.
 app.commandLine.appendSwitch('log-level', '3')
@@ -1371,7 +1375,24 @@ function buildAppMenu() {
   const send = (channel, ...args) => () => win && win.webContents.send(channel, ...args)
   const isMac = process.platform === 'darwin'
   const template = [
-    ...(isMac ? [{ role: 'appMenu' }] : []),
+    ...(isMac
+      ? [
+          {
+            label: DISPLAY_NAME,
+            submenu: [
+              { role: 'about', label: `About ${DISPLAY_NAME}` },
+              { type: 'separator' },
+              { role: 'services' },
+              { type: 'separator' },
+              { role: 'hide', label: `Hide ${DISPLAY_NAME}` },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit', label: `Quit ${DISPLAY_NAME}` },
+            ],
+          },
+        ]
+      : []),
     {
       label: 'File',
       submenu: [
@@ -1483,7 +1504,7 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 500,
-    title: 'MultiSpace Browser',
+    title: DISPLAY_NAME,
     backgroundColor: '#eceef2',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 24, y: 18 },

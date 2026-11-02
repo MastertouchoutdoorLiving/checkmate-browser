@@ -125,7 +125,7 @@ async function boot() {
     if (st.reason === 'NOT_MAC') {
       $('#setup .card').innerHTML = '<h1>iMessage needs a Mac</h1><p>Messages can only be shown on a Mac that is signed in to iMessage.</p>'
     } else {
-      $('#who').textContent = st.packaged ? 'MultiSpace Browser' : 'Terminal'
+      $('#who').textContent = st.packaged ? 'CheckMate Browser' : 'Terminal'
       $('#detail').textContent = st.detail || ''
     }
     return
