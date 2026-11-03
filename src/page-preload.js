@@ -890,7 +890,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
   function draw() {
     const t = troot.querySelector('.t')
     t.textContent = waTools.open ? '✕ Hide tools' : '⚡ Tools'
-    t.title = waTools.open ? 'Hide Remind me, Quick replies and Save contact' : 'Show Remind me, Quick replies and Save contact'
+    t.title = waTools.open ? 'Hide JobTread, Remind me, Quick replies and Save contact' : 'Show JobTread, Remind me, Quick replies and Save contact'
   }
   setInterval(() => {
     if (!document.body) return
@@ -1233,4 +1233,312 @@ if (location.hostname === 'mail.google.com' && window.top === window) {
     }
     if (!t && groot) renderG()
   }, 1500)
+}
+
+// ---------------------------------------------------------------- JobTread panel for phone conversations (WhatsApp, Quo)
+// Finds the customer by phone, links the conversation to a job, saves notes and tasks to it.
+function jtPhonePanel(opts) {
+  let host = null, root = null
+  const st = { key: '', ctx: null, customer: undefined, jobs: [], found: [], jobId: '', link: null, open: false, msg: '', cls: '', taskOpen: false, q: '', lookupQ: '' }
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+  const err = (e) => String((e && e.message) || e).replace(/^.*Error: /, '')
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const jobText = (j) => `${j.number || j.jobNumber ? '#' + (j.number || j.jobNumber) + ' ' : ''}${j.name || j.jobName}`
+
+  function ensure() {
+    if (host && host.isConnected) return
+    host = document.createElement('div')
+    host.id = opts.hostId
+    root = host.attachShadow({ mode: 'closed' })
+    msWire(root)
+    root.innerHTML = `<style>
+      *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
+      [hidden]{display:none!important}
+      .fab{position:fixed;z-index:2147483646;${opts.fabCss};border:1px solid #cfdcf5;background:#eef3fd;color:#2f5297;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .fab:hover{background:#e2eafb}
+      .pn{position:fixed;z-index:2147483647;width:350px;max-height:calc(100vh - 140px);${opts.panelCss};overflow-y:auto;background:#fff;border:1px solid #e2d9cc;border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.25);padding:14px;color:#2b2620;font-size:13px}
+      h3{margin:0 0 2px;font-size:15px;padding-right:20px}
+      .sub{color:#8a8075;font-size:12px;margin-bottom:8px}
+      .sec{font-size:11px;font-weight:700;color:#8a8075;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px}
+      .job{display:flex;gap:8px;align-items:center;width:100%;text-align:left;border:1px solid #ebe4d9;background:#fff;border-radius:10px;padding:7px 9px;margin-bottom:5px;cursor:pointer;font-size:12.5px;color:#2b2620}
+      .job:hover{background:#f6f1ea}.job.on{border-color:#3a5fa8;background:#eef3fd}
+      .job .st{margin-left:auto;color:#8a8075;font-size:11px;white-space:nowrap}.job .c{color:#8a8075;font-size:11px;display:block}
+      input,textarea{width:100%;border:1px solid #e2d9cc;border-radius:8px;padding:7px 9px;font-size:12.5px;background:#fff;color:#2b2620}
+      textarea{resize:vertical}
+      label{display:block;font-size:11.5px;color:#8a8075;margin:6px 0 0}
+      .btn{border:1px solid #e2d9cc;background:#fff;border-radius:9px;padding:7px 11px;font-size:12.5px;cursor:pointer;color:#2b2620}
+      .btn:hover{background:#f6f1ea}.btn.pri{background:#f26b3a;border-color:#f26b3a;color:#fff;font-weight:600}.btn:disabled{opacity:.5;cursor:default}
+      .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+      .row{display:flex;gap:6px}
+      .msg{font-size:12px;margin-top:8px;color:#8a8075}.msg.err{color:#d03b40}.msg.ok{color:#2f9e5b}
+      .muted{color:#8a8075;font-size:12.5px}
+      .x{position:absolute;right:10px;top:8px;border:0;background:none;font-size:18px;color:#8a8075;cursor:pointer}
+      .chk{display:flex;gap:6px;align-items:center;font-size:12px;color:#2b2620;margin-top:6px}.chk input{width:auto}
+    </style>
+    <button class="fab" hidden>🔨 JobTread</button>
+    <div class="pn" hidden><button class="x" title="Close">×</button><div class="in"></div></div>`
+    ;(document.body || document.documentElement).appendChild(host)
+    root.querySelector('.fab').onclick = () => { st.open = !st.open; if (st.open && st.customer === undefined) lookup(); draw() }
+    root.querySelector('.x').onclick = () => { st.open = false; draw() }
+    wire()
+  }
+
+  async function lookup(manual) {
+    const c = st.ctx
+    if (!c) return
+    st.customer = 'loading'
+    draw()
+    try {
+      const s = await ipcRenderer.invoke('jt:status')
+      if (!s.connected) { st.customer = 'nokey'; return draw() }
+      const q = manual ? st.lookupQ.trim() : ''
+      const by = q ? (/@/.test(q) ? { email: q } : /\d{7,}/.test(q.replace(/\D/g, '')) ? { phone: q } : { name: q }) : { phone: c.phone, name: c.name || '' }
+      const key = st.key
+      const d = by.phone || by.email || by.name ? await ipcRenderer.invoke('jt:find', by) : null
+      if (key !== st.key) return
+      st.customer = d
+      st.jobs = d ? [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)] : []
+      st.link = await ipcRenderer.invoke('jt:link-get', st.key).catch(() => null)
+      if (st.link && !st.jobs.some((j) => j.id === st.link.jobId)) st.jobs.unshift({ id: st.link.jobId, name: st.link.jobName, number: st.link.jobNumber })
+      const open = st.jobs.filter((j) => !j.closed)
+      if (!st.link && d && open.length === 1) await saveLink(open[0], true)
+      st.jobId = (st.link && st.link.jobId) || (open[0] || {}).id || ''
+    } catch (e) {
+      st.customer = { error: err(e) }
+    }
+    draw()
+  }
+  async function saveLink(j, auto, extra) {
+    if (!j) return
+    st.link = await ipcRenderer.invoke('jt:link-set', st.key, { jobId: j.id, jobName: j.name, jobNumber: String(j.number || ''), status: j.status || '', accountId: (st.customer && st.customer.id) || j.accountId || '', auto: !!auto, ...(extra || {}) }).catch(() => st.link)
+  }
+  const recentText = () => {
+    const c = st.ctx
+    const ins = (c.recent || []).filter((m) => !m.fromMe).slice(-5)
+    return ins.length ? ins.map((m) => `${c.title || 'Customer'} (${opts.source}): ${m.text}`).join('\n') : ''
+  }
+  const jb = (j) => `<button class="job ${j.id === st.jobId ? 'on' : ''}" data-job="${esc(j.id)}"><span>${esc(jobText(j))}${j.customer ? `<span class="c">${esc(j.customer)}</span>` : ''}</span><span class="st">${esc(j.closed ? 'Closed' : j.status || '')}</span></button>`
+
+  function draw() {
+    ensure()
+    const fab = root.querySelector('.fab'), pn = root.querySelector('.pn'), box = root.querySelector('.in')
+    const show = !!st.ctx && opts.visible()
+    fab.hidden = !show
+    if (show) fab.textContent = st.link ? `🔨 ${jobText(st.link)}` : '🔨 JobTread'
+    pn.hidden = !show || !st.open
+    if (pn.hidden) return
+    const typing = root.activeElement && /^(INPUT|TEXTAREA)$/.test(root.activeElement.tagName)
+    if (typing && st.noRedraw) return
+    const c = st.ctx, d = st.customer
+    let h = `<h3>${esc(c.title || 'Conversation')}</h3><div class="sub">${esc(c.phone ? (c.phone.replace(/\D/g, '').length === 10 ? '+1' : '+') + c.phone.replace(/\D/g, '') : 'No phone number found')}</div>`
+    if (opts.manual || !c.phone) h += `<div class="row"><input class="lq" placeholder="Phone, email or name to look up" value="${esc(st.lookupQ || c.phone || '')}"><button class="btn" data-a="find">Look up</button></div>`
+    if (d === 'loading' || d === undefined) h += '<div class="muted" style="margin-top:8px">Looking up in JobTread…</div>'
+    else if (d === 'nokey') h += '<div class="muted">JobTread is not connected yet. Open the menu CheckMate Browser → Settings: JobTread &amp; AI Keys… and paste your grant key.</div>'
+    else if (d && d.error) h += `<div class="msg err">${esc(d.error)}</div>`
+    else {
+      h += d ? `<div class="sec">Customer</div><button class="job" data-open="${esc(d.url)}"><span><b>${esc(d.name)}</b>${d.address ? `<span class="c">${esc(d.address)}</span>` : ''}</span><span class="st">Open ↗</span></button>`
+        : `<div class="sec">Not in JobTread yet</div><div class="muted">${esc(opts.notFoundTip || 'Find their job below, or add them as a customer first.')}</div>`
+      h += `<div class="sec">Job for this conversation</div>${st.jobs.map(jb).join('')}
+        <input class="q" placeholder="🔎 Find any job: name, number, customer, address" value="${esc(st.q)}" style="margin-top:4px">
+        <div class="found">${st.found.map(jb).join('')}</div>`
+      const ok = !!st.jobId
+      h += `<div class="sec">Send to the job</div>
+        <label>Note<textarea class="nt" rows="4" placeholder="What should go on the job?">${esc(st.note ?? recentText())}</textarea></label>
+        <div class="acts"><button class="btn" data-a="note" ${ok ? '' : 'disabled'}>📝 Save note to job</button><button class="btn" data-a="task" ${ok ? '' : 'disabled'}>✅ Create task…</button>${ok ? '<button class="btn" data-a="openjob">Open job ↗</button>' : ''}</div>
+        <div class="tf" ${st.taskOpen ? '' : 'hidden'}>
+          <label>Task<input class="tn" value="${esc((((c.recent || []).filter((m) => !m.fromMe).slice(-1)[0] || {}).text || '').replace(/\s+/g, ' ').slice(0, 120))}"></label>
+          <label>Due date<input class="td" type="date" value="${iso(new Date(Date.now() + 864e5))}"></label>
+          <label class="chk"><input type="checkbox" class="tm" checked> Also add to my Tasks</label>
+          <div class="acts"><button class="btn pri" data-a="task-go">Create task</button></div>
+        </div>`
+      if (opts.autoPhotos && ok) h += `<label class="chk"><input type="checkbox" class="ap" ${st.link && st.link.autoPhotos && st.link.jobId === st.jobId ? 'checked' : ''}> Send new photos from this chat to the job (while the chat is open)</label>`
+    }
+    h += `<div class="msg ${st.cls}">${esc(st.msg)}</div>`
+    const a = root.activeElement, cls = a && a.className, pos = a && a.selectionStart
+    box.innerHTML = h
+    if (cls && /^(q|lq|nt|tn)$/.test(cls)) { const el = box.querySelector('.' + cls); if (el) { el.focus(); try { el.setSelectionRange(pos, pos) } catch {} } }
+  }
+  const say = (m, cls) => { st.msg = m; st.cls = cls || ''; draw() }
+  const curJob = () => [...st.jobs, ...st.found].find((j) => j.id === st.jobId)
+
+  let qT = null
+  function wire() {
+    root.addEventListener('input', (e) => {
+      const c = e.target.className
+      if (c === 'nt') st.note = e.target.value
+      if (c === 'lq') st.lookupQ = e.target.value
+      if (c !== 'q') return
+      st.q = e.target.value
+      clearTimeout(qT)
+      qT = setTimeout(async () => {
+        if (st.q.trim().length < 2) { st.found = []; return draw() }
+        try { st.found = (await ipcRenderer.invoke('jt:jobs-search', st.q)).filter((j) => !st.jobs.some((x) => x.id === j.id)) } catch (e2) { return say(err(e2), 'err') }
+        draw()
+      }, 350)
+    })
+    root.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.className === 'lq') { e.preventDefault(); lookup(true) } })
+    root.addEventListener('change', async (e) => {
+      if (e.target.className !== 'ap') return
+      if (e.target.checked && opts.autoPhotos) { for (const img of opts.autoPhotos()) sent.add(img.id); try { localStorage.setItem(sentKey, JSON.stringify([...sent].slice(-500))) } catch {} } // only photos from now on
+      const j = curJob()
+      await saveLink(j, false, { autoPhotos: e.target.checked })
+      say(e.target.checked ? 'New photos in this chat will go to the job ✓' : 'Photos stay here', 'ok')
+    })
+    root.addEventListener('click', async (e) => {
+      const j = e.target.closest('[data-job]')
+      if (j) { st.jobId = j.dataset.job; await saveLink(curJob(), false); st.msg = ''; return draw() }
+      const o = e.target.closest('[data-open]')
+      if (o) return ipcRenderer.send('jt:open', o.dataset.open)
+      const a = e.target.closest('[data-a]')?.dataset.a
+      if (!a) return
+      const box = root.querySelector('.in')
+      const v = (s) => (box.querySelector(s) || {}).value || ''
+      try {
+        if (a === 'find') { st.lookupQ = v('.lq'); return lookup(true) }
+        if (a === 'openjob') return ipcRenderer.send('jt:open', `https://app.jobtread.com/jobs/${st.jobId}`)
+        if (a === 'task') { st.taskOpen = !st.taskOpen; return draw() }
+        if (a === 'note') {
+          const text = v('.nt').trim()
+          if (!text) return say('Write the note first.', 'err')
+          say('Saving…')
+          await ipcRenderer.invoke('jt:comment', { jobId: st.jobId, message: text, name: `${opts.source} · ${st.ctx.title || ''}`.slice(0, 120) })
+          st.note = ''
+          return say('Note saved to the job ✓', 'ok')
+        }
+        if (a === 'task-go') {
+          const name = v('.tn').trim()
+          if (!name) return say('Give the task a name.', 'err')
+          const due = v('.td')
+          say('Creating the task…')
+          await ipcRenderer.invoke('jt:task', { jobId: st.jobId, name, due, description: `From ${opts.source} with ${st.ctx.title || ''}\n\n${v('.nt')}`.slice(0, 4000) })
+          if (box.querySelector('.tm')?.checked) {
+            const jj = curJob()
+            await ipcRenderer.invoke('todos:add', { text: `${name}${jj ? ' (' + (jj.name || jj.jobName) + ')' : ''}`, due: due ? new Date(due + 'T09:00').getTime() : null }).catch(() => {})
+          }
+          st.taskOpen = false
+          return say('Task created in JobTread ✓', 'ok')
+        }
+      } catch (e2) {
+        say(err(e2), 'err')
+      }
+    })
+  }
+
+  // auto photos: new incoming pictures in the open chat
+  const sentKey = '__ms_jt_sent_photos'
+  let sent
+  try { sent = new Set(JSON.parse(localStorage.getItem(sentKey) || '[]')) } catch { sent = new Set() }
+  let photoBusy = false
+  async function photos() {
+    if (!opts.autoPhotos || photoBusy || !st.link || !st.link.autoPhotos || !st.link.jobId) return
+    const since = st.link.photosSince || 0
+    photoBusy = true
+    try {
+      for (const img of opts.autoPhotos()) {
+        if (sent.has(img.id)) continue
+        if (img.time && img.time < since) { sent.add(img.id); continue }
+        sent.add(img.id)
+        try {
+          const blob = await (await fetch(img.src)).blob()
+          if (blob.size < 15000) continue // thumbnails, stickers
+          const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+          await ipcRenderer.invoke('jt:upload', { targetType: 'job', targetId: st.link.jobId }, { name: `${opts.source} ${st.ctx.title || ''} ${new Date().toISOString().slice(0, 16).replace('T', ' ')}.${ext}`, mime: blob.type || 'image/jpeg', bytes: new Uint8Array(await blob.arrayBuffer()) })
+        } catch {}
+      }
+      try { localStorage.setItem(sentKey, JSON.stringify([...sent].slice(-500))) } catch {}
+    } finally {
+      photoBusy = false
+    }
+  }
+
+  if (opts.stopKeys) for (const type of ['keydown', 'keypress', 'keyup']) window.addEventListener(type, (e) => { if (host && e.composedPath()[0] === host) e.stopImmediatePropagation() }, true)
+  setInterval(async () => {
+    if (!document.body) return
+    ensure()
+    const c = opts.ctx()
+    const key = c ? opts.keyOf(c) : ''
+    if (key !== st.key) {
+      Object.assign(st, { key, ctx: c, customer: undefined, jobs: [], found: [], jobId: '', link: null, msg: '', cls: '', taskOpen: false, q: '', note: undefined, lookupQ: '' })
+      if (key) {
+        st.link = await ipcRenderer.invoke('jt:link-get', key).catch(() => null)
+        if (st.open) lookup()
+      }
+      draw()
+    } else if (c) {
+      st.ctx = c
+      if (root.querySelector('.fab').hidden === opts.visible()) draw()
+      photos()
+    } else draw()
+  }, 1500)
+}
+
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  const readWa = () => {
+    const main = document.querySelector('#main')
+    if (!main) return []
+    let rows = [...main.querySelectorAll('.message-in, .message-out')]
+    rows = rows.filter((r) => !rows.some((o) => o !== r && o.contains(r)))
+    return rows.map((r) => {
+      const t = r.querySelector('[data-pre-plain-text]') || r.querySelector('.copyable-text') || r.querySelector('.selectable-text')
+      return { fromMe: r.classList.contains('message-out'), text: ((t && t.innerText) || '').trim() }
+    }).filter((m) => m.text).slice(-25)
+  }
+  jtPhonePanel({
+    hostId: '__ms_wa_jt',
+    source: 'WhatsApp',
+    fabCss: 'right:24px;bottom:260px',
+    panelCss: 'right:24px;bottom:304px;max-height:calc(100vh - 320px)',
+    notFoundTip: 'Use "Save contact" (with "Also add to JobTread") to add them, or find their job below.',
+    visible: () => waTools.open && !!document.querySelector('#main footer'),
+    ctx: () => {
+      const main = document.querySelector('#main')
+      const head = main && main.querySelector('header')
+      if (!head || !main.querySelector('footer')) return null
+      const title = (((head.querySelector('span[dir="auto"]') || head.querySelector('span[title]')) || {}).textContent || '').trim()
+      if (!title) return null
+      let phone = ''
+      const idEl = main.querySelector('[data-id*="@c.us"]')
+      const m = idEl && /_(\d+)@c\.us/.exec(idEl.getAttribute('data-id'))
+      if (m) phone = m[1]
+      if (!phone && /^\+?[\d\s()-]{7,}$/.test(title)) phone = title.replace(/\D/g, '')
+      return { title, phone, name: /^\+?[\d\s()-]{7,}$/.test(title) ? '' : title, recent: readWa() }
+    },
+    keyOf: (c) => 'wa:' + c.title,
+    autoPhotos: () => {
+      const main = document.querySelector('#main')
+      if (!main) return []
+      return [...main.querySelectorAll('.message-in img[src^="blob:"]')]
+        .filter((i) => i.naturalWidth > 200 && i.naturalHeight > 200)
+        .map((i) => { const row = i.closest('[data-id]'); return { id: (row && row.getAttribute('data-id')) || i.src, src: i.src } })
+    },
+  })
+}
+
+if (/(^|\.)(quo\.com|openphone\.com)$/.test(location.hostname) && window.top === window) {
+  const PHONE = /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/
+  const visibleEl = (el) => el && el.getClientRects().length > 0
+  jtPhonePanel({
+    hostId: '__ms_quo_jt',
+    source: 'Quo',
+    manual: true,
+    stopKeys: true,
+    fabCss: 'right:22px;bottom:22px',
+    panelCss: 'right:18px;bottom:70px',
+    visible: () => true,
+    ctx: () => {
+      // The open conversation's phone number: look in the header area first, then the whole page.
+      const heads = [...document.querySelectorAll('header, [class*="header" i], [class*="Header"], [data-testid*="header" i]')].filter(visibleEl)
+      let phone = '', title = ''
+      for (const h of heads) {
+        const t = h.innerText || ''
+        const m = t.match(PHONE)
+        if (m) { phone = m[0].replace(/\D/g, ''); title = t.split('\n').map((x) => x.trim()).filter(Boolean)[0] || ''; break }
+      }
+      const mUrl = decodeURIComponent(location.href).match(/\+1\d{10}/)
+      if (!phone && mUrl) phone = mUrl[0].replace(/\D/g, '')
+      if (!/(inbox|conversation|contacts|calls|messages|\/c\/)/i.test(location.pathname) && !phone) return { title: 'Quo', phone: '', name: '', recent: [] }
+      return { title: title && !PHONE.test(title) ? title : phone ? phone : 'Quo', phone, name: title && !PHONE.test(title) ? title : '', recent: [] }
+    },
+    keyOf: (c) => 'quo:' + (c.phone || c.title),
+  })
 }

@@ -195,3 +195,14 @@ Open an email in Gmail and click the blue **🔨 JobTread** button (bottom right
 - **Attachments → Send to job**: photos go to the job's Photos folder, PDFs and other files to Files.
 - **New lead**: if the sender isn't in JobTread, "Create customer in JobTread" comes filled in with the name, email, phone and address from the signature.
 - **Supplier invoices**: type in "Find any job" (name, number, customer or address) to file an email or its PDF on any job. CheckMate remembers the job you used for each sender.
+
+## Search, morning summary and JobTread tasks
+
+- **Cmd+K** (menu CheckMate Browser → Search JobTread…): type a name, phone, email, job number or address to find a customer or job and open it in JobTread.
+- **Morning summary**: the first time you open CheckMate each day, Tasks opens with a "Today" box: JobTread tasks due, your to-dos due, today's reminders, and iMessages you haven't answered in 24 hours. Turn it off in the CheckMate Browser menu.
+- **JobTread · assigned to you** (in Tasks): your open JobTread tasks and to-dos. Click the circle to mark one done in JobTread.
+
+## WhatsApp and Quo + JobTread
+
+- **WhatsApp**: open ⚡ Tools, then **🔨 JobTread** (it shows the job's name once linked). Find the customer by phone, link the chat to a job, save a note, create a task, and optionally send new photos from the chat to the job. The job also shows in Unread.
+- **Quo**: the **🔨 JobTread** button (bottom right) reads the phone number of the open conversation. If it can't, type the phone, email or name and press Look up.

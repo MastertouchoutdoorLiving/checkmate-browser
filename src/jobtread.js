@@ -245,4 +245,68 @@ async function searchJobs(grantKey, q) {
   return [...jobs.filter((j) => !j.closed), ...jobs.filter((j) => j.closed)]
 }
 
-module.exports = { whoAmI, addCustomer, findCustomer, uploadFile, addComment, addTask, searchJobs, e164 }
+// Your own membership in the company (to find tasks assigned to you)
+const MEMBER_CACHE = new Map()
+async function myMembership(grantKey) {
+  if (MEMBER_CACHE.has(grantKey)) return MEMBER_CACHE.get(grantKey)
+  const o = await org(grantKey)
+  const d = await pave(grantKey, { currentGrant: { user: { id: {}, name: {}, memberships: { nodes: { id: {}, organization: { id: {} } } } } } })
+  const u = d.currentGrant && d.currentGrant.user
+  const m = u && (u.memberships?.nodes || []).find((x) => x.organization && x.organization.id === o.id)
+  const r = m ? { id: m.id, name: u.name || '' } : null
+  MEMBER_CACHE.set(grantKey, r)
+  return r
+}
+
+// Open JobTread tasks and to-dos assigned to you, soonest first (no date last).
+async function myTasks(grantKey) {
+  const o = await org(grantKey)
+  const me = await myMembership(grantKey)
+  if (!me) return { me: null, tasks: [] }
+  const d = await pave(grantKey, {
+    organization: {
+      $: { id: o.id },
+      tasks: {
+        $: {
+          size: 100,
+          with: { am: { _: 'assignedMemberships', $: { where: ['id', me.id] } } },
+          where: { and: [[['am', 'count'], '>', 0], { or: [['progress', null], ['progress', '<', 1]] }] },
+          sortBy: [{ field: 'endDate' }],
+        },
+        nodes: { id: {}, name: {}, startDate: {}, endDate: {}, isToDo: {}, progress: {}, job: { id: {}, name: {}, number: {} } },
+      },
+    },
+  })
+  const tasks = (d.organization?.tasks?.nodes || []).map((t) => ({
+    id: t.id, name: t.name, due: t.endDate || t.startDate || null, todo: !!t.isToDo, progress: t.progress,
+    job: t.job ? { id: t.job.id, name: t.job.name, number: t.job.number } : null,
+    url: t.job ? `https://app.jobtread.com/jobs/${t.job.id}/schedule` : 'https://app.jobtread.com/to-dos',
+  }))
+  tasks.sort((a, b) => (a.due || '9999') < (b.due || '9999') ? -1 : (a.due || '9999') > (b.due || '9999') ? 1 : 0)
+  return { me, tasks }
+}
+async function completeTask(grantKey, id) {
+  await pave(grantKey, { updateTask: { $: { id: String(id), progress: 1 } } })
+  return true
+}
+
+// Quick search: customers by name / phone / email, and jobs.
+async function searchAll(grantKey, q) {
+  q = String(q || '').trim().slice(0, 80)
+  if (q.length < 2) return { customers: [], jobs: [] }
+  const o = await org(grantKey)
+  const digits = q.replace(/\D/g, '')
+  const tasks = [searchJobs(grantKey, q).catch(() => [])]
+  if (digits.length >= 7 && digits.length >= q.replace(/[\s()+.-]/g, '').length) tasks.push(findCustomer(grantKey, { phone: q }).then((c) => (c ? [c] : [])).catch(() => []))
+  else if (/@/.test(q)) tasks.push(findCustomer(grantKey, { email: q }).then((c) => (c ? [c] : [])).catch(() => []))
+  else
+    tasks.push(
+      pave(grantKey, {
+        organization: { $: { id: o.id }, accounts: { $: { size: 8, where: { and: [['type', 'customer'], ['name', 'like', `%${q}%`]] }, sortBy: [{ field: 'createdAt', order: 'desc' }] }, nodes: ACCOUNT_FIELDS } },
+      }).then((d) => (d.organization?.accounts?.nodes || []).map(shapeAccount)).catch(() => [])
+    )
+  const [jobs, customers] = await Promise.all(tasks)
+  return { customers, jobs }
+}
+
+module.exports = { whoAmI, addCustomer, findCustomer, uploadFile, addComment, addTask, searchJobs, myTasks, completeTask, searchAll, e164 }

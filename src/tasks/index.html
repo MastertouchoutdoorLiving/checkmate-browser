@@ -13,6 +13,16 @@
       <div id="stats"></div>
     </header>
 
+    <div id="search-wrap">
+      <input id="search" placeholder="🔎 Search JobTread: customer, phone, email, job, address  (⌘K)" autocomplete="off" />
+      <div id="results" hidden></div>
+    </div>
+
+    <section id="summary" class="card">
+      <div class="sum-head"><b id="sum-title">Today</b><span id="sum-date"></span></div>
+      <div id="sum-body"><div class="empty">Loading…</div></div>
+    </section>
+
     <form id="add">
       <input id="add-text" placeholder="Add a to-do… (e.g. Call Andrew about the pavers)" autocomplete="off" />
       <select id="add-when" title="When is it due?">
@@ -33,6 +43,8 @@
         <div id="todos"></div>
         <button id="show-done" class="link" hidden></button>
         <div id="done" hidden></div>
+        <h2>JobTread · assigned to you <button id="jt-refresh" class="link" title="Refresh">↻</button></h2>
+        <div id="jt-tasks"><div class="empty">Loading…</div></div>
       </section>
       <aside class="col">
         <h2>Reply reminders</h2>

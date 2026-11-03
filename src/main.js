@@ -939,6 +939,46 @@ function registerIpc() {
     if (!key) throw new Error('JobTread is not connected yet.')
     return jobtread.addComment(key, { jobId: String(c.jobId || ''), message: String(c.message || ''), name: String(c.name || '') })
   })
+  // JobTread tasks assigned to you (for Tasks), quick search, and the morning summary
+  let myTasksCache = null
+  ipcMain.handle('jt:my-tasks', async (e, fresh) => {
+    if (!qrAllowed(e)) return { tasks: [] }
+    const key = jtKey()
+    if (!key) return { connected: false, tasks: [] }
+    if (!fresh && myTasksCache && myTasksCache.key === key && Date.now() - myTasksCache.at < 120e3) return myTasksCache.data
+    const data = { connected: true, ...(await jobtread.myTasks(key)) }
+    myTasksCache = { key, at: Date.now(), data }
+    return data
+  })
+  ipcMain.handle('jt:task-done', async (e, id) => {
+    if (!isInternalSender(e)) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    await jobtread.completeTask(key, String(id || ''))
+    if (myTasksCache) myTasksCache.data = { ...myTasksCache.data, tasks: myTasksCache.data.tasks.filter((t) => t.id !== id) }
+    return true
+  })
+  ipcMain.handle('jt:search', (e, q) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet. Open Settings: JobTread & AI Keys.')
+    return jobtread.searchAll(key, String(q || ''))
+  })
+  // iMessages from customers you haven't answered in over a day (last 7 days)
+  ipcMain.handle('summary:unanswered', async (e) => {
+    if (!isInternalSender(e)) return []
+    if (process.platform !== 'darwin' && !process.env.MULTISPACE_TEST_CHATDB) return []
+    try {
+      const now = Date.now()
+      const hidden = store.state.settings.imsg?.hidden || {}
+      return (await imessage.listChats(80))
+        .filter((c) => !c.group && !c.lastFromMe && c.date < now - 24 * 3600e3 && c.date > now - 7 * 24 * 3600e3 && !(hidden[c.guid] >= c.date))
+        .slice(0, 15)
+        .map((c) => ({ guid: c.guid, title: c.title || c.handle, last: c.last, date: c.date, job: jobLabel(jtLinks()[c.guid]) }))
+    } catch {
+      return []
+    }
+  })
   ipcMain.handle('jt:jobs-search', (e, q) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')
     const key = jtKey()
@@ -1628,12 +1668,13 @@ function showTasks() {
   openApp(sp.id, a.id)
 }
 // Settings: the JobTread and AI keys live in the Tasks app, under Connections.
-function showConnections() {
+function showConnections() { showTasksAnd('tasks:show-conn') }
+function showTasksAnd(channel) {
   showTasks()
   for (const rt of runtimes.values())
     for (const t of rt.tabs.values())
       if (t.url === TASKS_URL) {
-        const send = () => t.view.webContents.send('tasks:show-conn')
+        const send = () => t.view.webContents.send(channel)
         if (t.view.webContents.isLoading()) t.view.webContents.once('did-finish-load', () => setTimeout(send, 300))
         else send()
       }
@@ -1776,7 +1817,7 @@ function qrAllowed(e) {
   if (tab && tab.internal) return true
   let h = ''
   try { h = new URL(e.senderFrame ? e.senderFrame.url : e.sender.getURL()).hostname } catch {}
-  return (h === 'web.whatsapp.com' || h === 'mail.google.com') && !(e.senderFrame && e.senderFrame.parent)
+  return (h === 'web.whatsapp.com' || h === 'mail.google.com' || /(^|\.)(quo\.com|openphone\.com)$/.test(h)) && !(e.senderFrame && e.senderFrame.parent)
 }
 function notifyQuickReplies() {
   for (const rt of runtimes.values())
@@ -1829,7 +1870,7 @@ async function unifiedList() {
         waOpen = true
         const w = waUnread.get(t.view.webContents.id)
         for (const c of (w && w.list) || [])
-          items.push({ kind: 'wa', key: `w:${t.id}:${c.name}`, spaceId: sp.id, tabId: t.id, name: c.name, preview: c.preview, count: c.count, time: c.time, space: sp.name })
+          items.push({ kind: 'wa', key: `w:${t.id}:${c.name}`, spaceId: sp.id, tabId: t.id, name: c.name, preview: c.preview, count: c.count, time: c.time, space: sp.name, job: jobLabel(jtLinks()['wa:' + c.name]) })
         continue
       }
       if (t.badge) apps.push({ kind: 'app', key: `a:${t.id}`, spaceId: sp.id, tabId: t.id, name: app ? app.name : String(t.title || host).replace(/^\s*[*•]\s*/, '').replace(/\(\d+\+?\)\s*/, '').trim() || host, count: t.badge, space: sp.name, favicon: t.favicon || (app && app.icon) || null })
@@ -1948,6 +1989,14 @@ function buildAppMenu() {
               { role: 'about', label: `About ${DISPLAY_NAME}` },
               { label: 'Check for Updates…', click: () => updater.check({ manual: true }) },
               { label: 'Settings: JobTread & AI Keys…', accelerator: 'CmdOrCtrl+,', click: showConnections },
+              { label: 'Search JobTread…', accelerator: 'CmdOrCtrl+K', click: () => showTasksAnd('tasks:search') },
+              { label: 'Morning Summary', click: () => showTasksAnd('tasks:summary') },
+              {
+                label: 'Show Morning Summary When I Start',
+                type: 'checkbox',
+                checked: store.state.settings.morningSummary !== false,
+                click: (mi) => { store.state.settings.morningSummary = mi.checked; store.save() },
+              },
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -2170,6 +2219,15 @@ app.whenReady().then(() => {
   store.state.spaces.forEach((s) => getRuntime(s.id))
   setTimeout(startImessageWatcher, 3000)
   updater.start(() => win)
+  // Morning summary: the first time you open the browser each day, show Tasks with today's list.
+  {
+    const today = new Date().toDateString()
+    if (store.state.settings.morningSummary !== false && store.state.settings.lastSummaryDay !== today) {
+      store.state.settings.lastSummaryDay = today
+      store.save()
+      setTimeout(() => showTasksAnd('tasks:summary'), 3500)
+    }
+  }
   if (!store.state.settings.tasksAppAdded) {
     store.state.settings.tasksAppAdded = true
     const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]

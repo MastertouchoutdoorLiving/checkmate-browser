@@ -187,3 +187,148 @@ window.addEventListener('focus', () => { refresh(); renderConn() })
 refresh()
 renderConn()
 setInterval(render, 60 * 1000) // keep "overdue" and times fresh
+
+
+// ---- JobTread tasks assigned to you
+let jtTasks = { connected: false, tasks: [] }
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+const dayLabel = (iso) => {
+  if (!iso) return ''
+  const t = todayStr()
+  if (iso === t) return 'Today'
+  const d = new Date(iso + 'T12:00')
+  const diff = Math.round((d - new Date(t + 'T12:00')) / 864e5)
+  if (diff === 1) return 'Tomorrow'
+  if (diff === -1) return 'Yesterday'
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric', ...(Math.abs(diff) > 300 ? { year: 'numeric' } : {}) })
+}
+function renderJt() {
+  const box = $('#jt-tasks')
+  if (!jtTasks.connected) { box.innerHTML = '<div class="empty">Connect JobTread below (Settings · Connections) to see the tasks assigned to you.</div>'; return }
+  if (jtTasks.error) { box.innerHTML = `<div class="empty">${esc(jtTasks.error)}</div>`; return }
+  if (!jtTasks.tasks.length) { box.innerHTML = '<div class="empty">Nothing assigned to you in JobTread. 🎉</div>'; return }
+  const t = todayStr()
+  box.innerHTML = jtTasks.tasks.slice(0, 40).map((k) => {
+    const late = k.due && k.due < t
+    return `<div class="card todo jtt" data-jt="${esc(k.id)}">
+      <button class="chk" data-act="jt-done" title="Mark as done in JobTread"></button>
+      <div class="body"><div class="text"><span class="src">JobTread</span>${esc(k.name)}</div>
+      <div class="due ${late ? 'late' : ''}">${k.due ? (late ? 'Overdue · ' : '') + esc(dayLabel(k.due)) : 'No date'}${k.job ? ' · ' + (k.job.number ? '#' + esc(k.job.number) + ' ' : '') + esc(k.job.name) : ''}</div></div>
+      <button class="btn small" data-act="jt-open">Open</button></div>`
+  }).join('') + (jtTasks.tasks.length > 40 ? `<div class="empty">+${jtTasks.tasks.length - 40} more in JobTread</div>` : '')
+}
+async function loadJt(fresh) {
+  try { jtTasks = await window.imsg.jtMyTasks(fresh) } catch (err) { jtTasks = { connected: true, tasks: [], error: errText(err) } }
+  renderJt()
+  renderSummary()
+}
+$('#jt-refresh').addEventListener('click', () => loadJt(true))
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-act^="jt-"]')
+  const card = b && b.closest('[data-jt]')
+  if (!card) return
+  const k = jtTasks.tasks.find((x) => x.id === card.dataset.jt)
+  if (!k) return
+  if (b.dataset.act === 'jt-open') return window.imsg.jtOpen(k.url)
+  b.textContent = '✓'
+  card.classList.add('done')
+  try {
+    await window.imsg.jtTaskDone(k.id)
+    jtTasks.tasks = jtTasks.tasks.filter((x) => x.id !== k.id)
+    setTimeout(() => { renderJt(); renderSummary() }, 600)
+  } catch (err) {
+    card.classList.remove('done'); b.textContent = ''
+    alert(errText(err))
+  }
+})
+
+// ---- Morning summary (the "Today" box)
+let unanswered = []
+function renderSummary() {
+  $('#sum-date').textContent = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+  const h = new Date().getHours()
+  $('#sum-title').textContent = h < 12 ? 'Good morning ☀️ Here is your day' : h < 18 ? 'Today' : 'Today (evening)'
+  const t = todayStr(), now = Date.now(), end = startOfDay(now) + DAY
+  const jtDue = (jtTasks.tasks || []).filter((k) => k.due && k.due <= t)
+  const myDue = todos.filter((x) => !x.done && x.due && x.due < end)
+  const remToday = timers.reminders.filter((r) => r.at < end)
+  const col = (title, n, lines, red) => `<div class="sum-col"><h3>${title} <span class="n ${red && n ? 'red' : ''}">${n}</span></h3>${lines.slice(0, 5).join('') || '<div class="sum-line"><span class="m">Nothing</span></div>'}${lines.length > 5 ? `<div class="sum-line"><span class="m">+${lines.length - 5} more</span></div>` : ''}</div>`
+  $('#sum-body').innerHTML = `<div class="sum-grid">
+    ${col('JobTread tasks due', jtDue.length, jtDue.map((k) => `<button class="sum-line ${k.due < t ? 'late' : ''}" data-sum-jt="${esc(k.id)}">${esc(k.name)} <span class="m">· ${esc(dayLabel(k.due))}${k.job ? ' · ' + esc(k.job.name) : ''}</span></button>`), true)}
+    ${col('My to-dos due', myDue.length, myDue.map((x) => `<div class="sum-line ${x.due < now ? 'late' : ''}">${esc(x.text)} <span class="m">· ${esc(fmt(x.due))}</span></div>`), true)}
+    ${col('Reminders today', remToday.length, remToday.map((r) => `<button class="sum-line" data-sum-rem="${esc(r.id)}">${esc(r.title || r.name || 'Conversation')} <span class="m">· ${esc(fmt(r.at))}</span></button>`))}
+    ${col('Not answered for 24h+', unanswered.length, unanswered.map((u) => `<button class="sum-line late" data-sum-im="${esc(u.guid)}">${esc(u.title)} <span class="m">· ${esc(fmt(u.date))}${u.job ? ' · 🔨 ' + esc(u.job) : ''}</span></button>`), true)}
+  </div>`
+}
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-sum-jt], [data-sum-rem], [data-sum-im]')
+  if (!a) return
+  if (a.dataset.sumJt) { const k = jtTasks.tasks.find((x) => x.id === a.dataset.sumJt); if (k) window.imsg.jtOpen(k.url) }
+  if (a.dataset.sumRem) window.imsg.openReminder(a.dataset.sumRem)
+  if (a.dataset.sumIm) window.imsg.unifiedOpen({ kind: 'imsg', guid: a.dataset.sumIm })
+})
+async function loadUnanswered() {
+  try { unanswered = await window.imsg.unanswered() } catch { unanswered = [] }
+  renderSummary()
+}
+window.imsg.onSummary(() => {
+  loadJt(true); loadUnanswered()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  $('#summary').classList.add('flash')
+  setTimeout(() => $('#summary').classList.remove('flash'), 1800)
+})
+
+// ---- Search JobTread (⌘K)
+let sTimer = null, sRes = [], sSel = 0
+function drawResults(r) {
+  const box = $('#results')
+  sRes = [...(r.customers || []).map((c) => ({ kind: 'Customer', title: c.name, sub: [c.phone, c.email, c.address].filter(Boolean).join(' · '), url: c.url, jobs: c.jobs })),
+    ...(r.jobs || []).map((j) => ({ kind: j.closed ? 'Job · closed' : 'Job', title: `${j.number ? '#' + j.number + ' ' : ''}${j.name}`, sub: [j.customer, j.address].filter(Boolean).join(' · '), url: j.url }))]
+  sSel = 0
+  if (!sRes.length) { box.innerHTML = '<div class="empty">No match in JobTread.</div>'; box.hidden = false; return }
+  let html = ''
+  let last = ''
+  sRes.forEach((x, i) => {
+    const sec = x.kind.startsWith('Job') ? 'Jobs' : 'Customers'
+    if (sec !== last) { html += `<div class="r-sec">${sec}</div>`; last = sec }
+    html += `<button class="r-item ${i === sSel ? 'sel' : ''}" data-i="${i}"><span class="t">${esc(x.title)}</span><span class="s">${esc(x.sub)}</span><span class="k">${esc(x.kind)}</span></button>`
+  })
+  box.innerHTML = html
+  box.hidden = false
+}
+$('#search').addEventListener('input', () => {
+  clearTimeout(sTimer)
+  const q = $('#search').value.trim()
+  if (q.length < 2) { $('#results').hidden = true; return }
+  sTimer = setTimeout(async () => {
+    $('#results').innerHTML = '<div class="empty">Searching…</div>'
+    $('#results').hidden = false
+    try { drawResults(await window.imsg.jtSearch(q)) } catch (err) { $('#results').innerHTML = `<div class="empty">${esc(errText(err))}</div>` }
+  }, 300)
+})
+$('#search').addEventListener('keydown', (e) => {
+  const items = [...document.querySelectorAll('#results .r-item')]
+  if (e.key === 'Escape') { $('#results').hidden = true; return }
+  if (!items.length) return
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault()
+    sSel = (sSel + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+    items.forEach((b, i) => b.classList.toggle('sel', i === sSel))
+  }
+  if (e.key === 'Enter') { e.preventDefault(); items[sSel] && items[sSel].click() }
+})
+$('#results').addEventListener('click', (e) => {
+  const b = e.target.closest('.r-item')
+  if (!b) return
+  window.imsg.jtOpen(sRes[Number(b.dataset.i)].url)
+  $('#results').hidden = true
+})
+document.addEventListener('mousedown', (e) => { if (!e.target.closest('#search-wrap')) $('#results').hidden = true })
+window.imsg.onSearch(() => { window.scrollTo({ top: 0 }); $('#search').focus(); $('#search').select() })
+
+const _render = render
+render = function () { _render(); renderSummary() }
+loadJt()
+loadUnanswered()
+setInterval(() => loadJt(), 5 * 60e3)
+setInterval(loadUnanswered, 10 * 60e3)
