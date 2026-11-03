@@ -869,7 +869,7 @@ function registerIpc() {
   // To-dos for the Tasks dashboard
   ipcMain.handle('todos:list', (e) => (qrAllowed(e) ? todos() : []))
   ipcMain.handle('todos:add', (e, t) => {
-    if (!isInternalSender(e) || !t) throw new Error('Not allowed')
+    if (!qrAllowed(e) || !t) throw new Error('Not allowed')
     const text = String(t.text || '').trim().slice(0, 500)
     if (!text) throw new Error('Write the to-do first.')
     const due = Number(t.due) || null
@@ -909,7 +909,7 @@ function registerIpc() {
   // A conversation linked to one JobTread job
   ipcMain.handle('jt:link-get', (e, key) => (qrAllowed(e) ? jtLinks()[String(key)] || null : null))
   ipcMain.handle('jt:link-set', (e, key, link) => {
-    if (!isInternalSender(e)) throw new Error('Not allowed')
+    if (!qrAllowed(e)) throw new Error('Not allowed')
     key = String(key || '')
     if (!key) throw new Error('No conversation')
     if (!link) delete jtLinks()[key]
@@ -934,13 +934,34 @@ function registerIpc() {
     return jtLinks()[key] || null
   })
   ipcMain.handle('jt:comment', (e, c) => {
-    if (!isInternalSender(e) || !c) throw new Error('Not allowed')
+    if (!qrAllowed(e) || !c) throw new Error('Not allowed')
     const key = jtKey()
     if (!key) throw new Error('JobTread is not connected yet.')
     return jobtread.addComment(key, { jobId: String(c.jobId || ''), message: String(c.message || ''), name: String(c.name || '') })
   })
+  ipcMain.handle('jt:jobs-search', (e, q) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    return jobtread.searchJobs(key, String(q || ''))
+  })
+  // A Gmail attachment, downloaded with that space's Google sign-in, filed on a job.
+  ipcMain.handle('jt:upload-url', async (e, t, f) => {
+    if (!qrAllowed(e) || !f) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    let u
+    try { u = new URL(String(f.url)) } catch { throw new Error('Bad attachment link') }
+    if (u.protocol !== 'https:' || !/(^|\.)(mail\.google\.com|googleusercontent\.com)$/.test(u.hostname)) throw new Error('Not allowed')
+    const res = await e.sender.session.fetch(u.href, { credentials: 'include' })
+    if (!res.ok) throw new Error(`Could not download the attachment (${res.status})`)
+    const buf = Buffer.from(await res.arrayBuffer())
+    const mime = String(f.mime || res.headers.get('content-type') || '').split(';')[0] || 'application/octet-stream'
+    const folder = /^image\//.test(mime) ? 'Photos' : 'Files'
+    return jobtread.uploadFile(key, { ...jtTarget(t), name: String(f.name || 'Attachment').slice(0, 120), mime, bytes: buf, folder })
+  })
   ipcMain.handle('jt:task', (e, t) => {
-    if (!isInternalSender(e) || !t) throw new Error('Not allowed')
+    if (!qrAllowed(e) || !t) throw new Error('Not allowed')
     const key = jtKey()
     if (!key) throw new Error('JobTread is not connected yet.')
     return jobtread.addTask(key, { jobId: String(t.jobId || ''), name: String(t.name || ''), description: String(t.description || ''), due: String(t.due || '') })
@@ -1755,7 +1776,7 @@ function qrAllowed(e) {
   if (tab && tab.internal) return true
   let h = ''
   try { h = new URL(e.senderFrame ? e.senderFrame.url : e.sender.getURL()).hostname } catch {}
-  return h === 'web.whatsapp.com' && !(e.senderFrame && e.senderFrame.parent)
+  return (h === 'web.whatsapp.com' || h === 'mail.google.com') && !(e.senderFrame && e.senderFrame.parent)
 }
 function notifyQuickReplies() {
   for (const rt of runtimes.values())

@@ -174,7 +174,7 @@ async function findCustomer(grantKey, { phone, email, name } = {}) {
 }
 
 // Uploads a picture (bytes) and files it on a job or customer.
-async function uploadFile(grantKey, { targetType, targetId, name, mime, bytes }) {
+async function uploadFile(grantKey, { targetType, targetId, name, mime, bytes, folder }) {
   if (!['job', 'account'].includes(targetType)) throw new Error('Pick a job or customer.')
   const o = await org(grantKey)
   const buf = Buffer.from(bytes)
@@ -188,7 +188,7 @@ async function uploadFile(grantKey, { targetType, targetId, name, mime, bytes })
   const put = await net.fetch(r.url, { method: r.method || 'PUT', headers: r.headers || {}, body: buf })
   if (!put.ok) throw new Error(`Upload failed (${put.status})`)
   await pave(grantKey, {
-    createFile: { $: { targetType, targetId, name: name || 'Photo.jpg', uploadRequestId: r.id, folder: 'Photos' }, createdFile: { id: {} } },
+    createFile: { $: { targetType, targetId, name: name || 'Photo.jpg', uploadRequestId: r.id, folder: folder || 'Photos' }, createdFile: { id: {} } },
   })
   return true
 }
@@ -222,4 +222,27 @@ async function addTask(grantKey, { jobId, name, description, due }) {
   return { id: d.createTask?.createdTask?.id || null, url: `https://app.jobtread.com/jobs/${jobId}` }
 }
 
-module.exports = { whoAmI, addCustomer, findCustomer, uploadFile, addComment, addTask, e164 }
+// Any job by name, number, customer or address (for supplier invoices and the like).
+async function searchJobs(grantKey, q) {
+  const o = await org(grantKey)
+  q = String(q || '').trim().slice(0, 80)
+  if (q.length < 2) return []
+  const like = `%${q}%`
+  const d = await pave(grantKey, {
+    organization: {
+      $: { id: o.id },
+      jobs: {
+        $: { size: 12, sortBy: [{ field: 'createdAt', order: 'desc' }], where: { or: [['name', 'like', like], ['number', 'like', like], [['location', 'account', 'name'], 'like', like], [['location', 'address'], 'like', like]] } },
+        nodes: { id: {}, name: {}, number: {}, closedOn: {}, location: { address: {}, account: { id: {}, name: {} } } },
+      },
+    },
+  })
+  const jobs = (d.organization?.jobs?.nodes || []).map((j) => ({
+    id: j.id, name: j.name, number: j.number, closed: !!j.closedOn,
+    customer: j.location?.account?.name || '', accountId: j.location?.account?.id || '', address: j.location?.address || '',
+    url: `https://app.jobtread.com/jobs/${j.id}`,
+  }))
+  return [...jobs.filter((j) => !j.closed), ...jobs.filter((j) => j.closed)]
+}
+
+module.exports = { whoAmI, addCustomer, findCustomer, uploadFile, addComment, addTask, searchJobs, e164 }

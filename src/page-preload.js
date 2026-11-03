@@ -948,3 +948,289 @@ function msWire(root) {
     if (text) { el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })) }
   })
 }
+
+// ---------------------------------------------------------------- Gmail ↔ JobTread
+// A "🔨 JobTread" button on an open email. The panel finds the sender in JobTread and lets you
+// save the email to a job, send its attachments to the job, make a task, or add a new lead.
+if (location.hostname === 'mail.google.com' && window.top === window) {
+  let ghost = null, groot = null
+  let gmState = { thread: '', sender: null, customer: undefined, jobs: [], jobId: '', open: false }
+  const gesc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+  const gerr = (err) => String((err && err.message) || err).replace(/^.*Error: /, '')
+  const vis = (el) => el && el.getClientRects().length > 0
+
+  // what's on screen
+  function openThread() {
+    const subj = [...document.querySelectorAll('h2.hP')].find(vis)
+    if (!subj) return null
+    const msgs = [...document.querySelectorAll('div.adn')].filter(vis)
+    const withBody = msgs.filter((m) => m.querySelector('div.a3s'))
+    const last = withBody[withBody.length - 1] || msgs[msgs.length - 1]
+    const me = (document.title.match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [''])[0].toLowerCase()
+    // sender: the newest message not sent by you
+    let sender = null
+    for (const m of [...msgs].reverse()) {
+      const g = m.querySelector('.gD[email]')
+      if (g && g.getAttribute('email').toLowerCase() !== me) { sender = { email: g.getAttribute('email'), name: g.getAttribute('name') || g.textContent.trim() }; break }
+    }
+    if (!sender) { const g = document.querySelector('.gD[email]'); if (g) sender = { email: g.getAttribute('email'), name: g.getAttribute('name') || g.textContent.trim() } }
+    const bodyEl = last && last.querySelector('div.a3s')
+    const body = bodyEl ? bodyEl.innerText.replace(/\n{3,}/g, '\n\n').trim() : ''
+    const when = last && last.querySelector('.g3[title]') ? last.querySelector('.g3[title]').getAttribute('title') : ''
+    return { id: location.hash + '|' + subj.textContent, subject: subj.textContent.trim(), sender, body, when, attachments: attachmentsOf(msgs) }
+  }
+  function attachmentsOf(msgs) {
+    const out = new Map()
+    for (const m of msgs) {
+      for (const s of m.querySelectorAll('span[download_url]')) {
+        const v = s.getAttribute('download_url') || ''
+        const a = v.indexOf(':'), b = v.indexOf(':', a + 1)
+        if (a < 0 || b < 0) continue
+        const url = v.slice(b + 1)
+        out.set(url, { mime: v.slice(0, a), name: v.slice(a + 1, b), url })
+      }
+      for (const a of m.querySelectorAll('a[href*="view=att"], a[href*="disp=safe"]')) {
+        if (out.has(a.href)) continue
+        const box = a.closest('.aZo, .aQH > span, [role="listitem"]') || a
+        const name = (box.querySelector('.aV3') || {}).textContent || a.getAttribute('aria-label') || a.textContent.trim() || 'Attachment'
+        if ([...out.values()].some((x) => x.name === name)) continue
+        out.set(a.href, { mime: '', name: name.replace(/^Download attachment\s*/i, '').trim(), url: a.href })
+      }
+    }
+    return [...out.values()].slice(0, 25)
+  }
+  // a phone number and address from the email (usually in the signature)
+  function guessContact(text) {
+    const phone = (text.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}/) || [''])[0]
+    const csz = text.match(/([A-Z][A-Za-z .'-]{1,40}),\s*([A-Z]{2})\s+(\d{5})(?:-\d{4})?/)
+    const street = (text.match(/\b\d{2,6}[^\S\n]+(?:[NSEW]{1,2}[^\S\n]+)?[A-Za-z0-9 .'-]{2,40}[^\S\n](?:St|Street|Rd|Road|Ave|Avenue|Dr|Drive|Blvd|Ln|Lane|Ct|Court|Way|Pl|Place|Ter|Terrace|Cir|Circle|Pkwy|Hwy|Trl)\b\.?/i) || [''])[0]
+    return { phone, street, city: csz ? csz[1].trim() : '', state: csz ? csz[2] : '', zip: csz ? csz[3] : '' }
+  }
+
+  function ensureG() {
+    if (ghost && ghost.isConnected) return
+    ghost = document.createElement('div')
+    ghost.id = '__ms_gm_jt'
+    groot = ghost.attachShadow({ mode: 'closed' })
+    msWire(groot)
+    groot.innerHTML = `<style>
+      *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
+      [hidden]{display:none!important}
+      .fab{position:fixed;right:22px;bottom:22px;z-index:2147483000;border:0;border-radius:20px;padding:9px 15px;background:#3a5fa8;color:#fff;font-size:13.5px;font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.22);cursor:pointer}
+      .fab:hover{background:#2f4f8f}
+      .pn{position:fixed;right:18px;bottom:70px;z-index:2147483000;width:350px;max-height:calc(100vh - 110px);overflow-y:auto;background:#fff;border:1px solid #e2d9cc;border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.22);padding:14px;color:#2b2620;font-size:13px}
+      h3{margin:0 0 2px;font-size:15px}
+      .sub{color:#8a8075;font-size:12px;margin-bottom:10px;word-break:break-all}
+      .sec{font-size:11px;font-weight:700;color:#8a8075;text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px}
+      .job{display:flex;gap:8px;align-items:center;width:100%;text-align:left;border:1px solid #ebe4d9;background:#fff;border-radius:10px;padding:7px 9px;margin-bottom:5px;cursor:pointer;font-size:12.5px}
+      .job:hover{background:#f6f1ea}
+      .job.on{border-color:#3a5fa8;background:#eef3fd}
+      .job .st{margin-left:auto;color:#8a8075;font-size:11px;white-space:nowrap}
+      .job .c{color:#8a8075;font-size:11px;display:block}
+      input,select,textarea{width:100%;border:1px solid #e2d9cc;border-radius:8px;padding:7px 9px;font-size:12.5px;background:#fff;color:#2b2620}
+      textarea{resize:vertical}
+      .g2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+      .g3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px}
+      label{display:block;font-size:11.5px;color:#8a8075;margin:6px 0 0}
+      .btn{border:1px solid #e2d9cc;background:#fff;border-radius:9px;padding:7px 11px;font-size:12.5px;cursor:pointer;color:#2b2620}
+      .btn:hover{background:#f6f1ea}
+      .btn.pri{background:#f26b3a;border-color:#f26b3a;color:#fff;font-weight:600}
+      .btn:disabled{opacity:.5;cursor:default}
+      .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+      .att{display:flex;gap:7px;align-items:center;font-size:12.5px;margin:3px 0;word-break:break-all}
+      .att input{width:auto}
+      .msg{font-size:12px;margin-top:8px;color:#8a8075}
+      .msg.err{color:#d03b40}.msg.ok{color:#2f9e5b}
+      .muted{color:#8a8075;font-size:12.5px}
+      .x{position:absolute;right:10px;top:8px;border:0;background:none;font-size:18px;color:#8a8075;cursor:pointer}
+      .row{display:flex;gap:6px}
+      .chk{display:flex;gap:6px;align-items:center;font-size:12px;color:#2b2620;margin-top:6px}.chk input{width:auto}
+    </style>
+    <button class="fab" hidden>🔨 JobTread</button>
+    <div class="pn" hidden><button class="x" title="Close">×</button><div class="in"></div></div>`
+    document.documentElement.appendChild(ghost)
+    groot.querySelector('.fab').onclick = () => {
+      gmState.open = !gmState.open
+      if (gmState.open && gmState.cur && gmState.customer === undefined) lookup(gmState.cur)
+      renderG(true)
+    }
+    wireG()
+    groot.querySelector('.x').onclick = () => { gmState.open = false; renderG() }
+  }
+
+  let gStatus = null
+  async function lookup(t) {
+    gmState.customer = 'loading'
+    renderG()
+    try {
+      gStatus = gStatus || (await ipcRenderer.invoke('jt:status'))
+      if (!gStatus.connected) { gmState.customer = 'nokey'; return renderG() }
+      const d = t.sender ? await ipcRenderer.invoke('jt:find', { email: t.sender.email, name: t.sender.name }) : null
+      if (gmState.thread !== t.id) return
+      gmState.customer = d
+      gmState.jobs = d ? [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)] : []
+      const saved = t.sender ? await ipcRenderer.invoke('jt:link-get', 'mail:' + t.sender.email.toLowerCase()).catch(() => null) : null
+      gmState.saved = saved
+      if (saved && !gmState.jobs.some((j) => j.id === saved.jobId)) gmState.jobs.unshift({ id: saved.jobId, name: saved.jobName, number: saved.jobNumber, customer: saved.customer || '' })
+      gmState.jobId = (saved && saved.jobId) || (gmState.jobs.find((j) => !j.closed) || {}).id || ''
+    } catch (err) {
+      gmState.customer = { error: gerr(err) }
+    }
+    renderG()
+  }
+
+  function jobBtn(j) {
+    return `<button class="job ${j.id === gmState.jobId ? 'on' : ''}" data-job="${gesc(j.id)}"><span>${j.number ? '#' + gesc(j.number) + ' ' : ''}${gesc(j.name)}${j.customer ? `<span class="c">${gesc(j.customer)}</span>` : ''}</span><span class="st">${gesc(j.closed ? 'Closed' : j.status || '')}</span></button>`
+  }
+
+  function renderG(refocus) {
+    const t = gmState.cur
+    ensureG()
+    const fab = groot.querySelector('.fab'), pn = groot.querySelector('.pn'), box = groot.querySelector('.in')
+    fab.hidden = !t
+    pn.hidden = !t || !gmState.open
+    if (!t || !gmState.open) return
+    const c = gmState.customer
+    const s = t.sender || { name: '', email: '' }
+    let html = `<h3>${gesc(s.name || s.email || 'Email')}</h3><div class="sub">${gesc(s.email)}</div>`
+    if (c === 'loading' || c === undefined) html += '<div class="muted">Looking up in JobTread…</div>'
+    else if (c === 'nokey') html += '<div class="muted">JobTread is not connected yet. Open the menu CheckMate Browser → Settings: JobTread &amp; AI Keys… and paste your grant key.</div>'
+    else if (c && c.error) html += `<div class="msg err">${gesc(c.error)}</div>`
+    else {
+      if (c) html += `<div class="sec">Customer</div><button class="job" data-open="${gesc(c.url)}"><span><b>${gesc(c.name)}</b>${c.address ? `<span class="c">${gesc(c.address)}</span>` : ''}</span><span class="st">Open ↗</span></button>`
+      else {
+        const g = guessContact(t.body)
+        const nm = s.name && !/@/.test(s.name) ? s.name : ''
+        html += `<div class="sec">Not in JobTread yet</div>
+          <details class="lead"${gmState.leadOpen ? ' open' : ''}><summary class="btn" style="list-style:none;display:inline-block">➕ Create customer in JobTread</summary>
+            <label>Name<input class="l-name" value="${gesc(nm)}"></label>
+            <div class="g2"><label>Phone<input class="l-phone" value="${gesc(g.phone)}"></label><label>Email<input class="l-email" value="${gesc(s.email)}"></label></div>
+            <label>Street<input class="l-street" value="${gesc(g.street)}"></label>
+            <div class="g3"><label>City<input class="l-city" value="${gesc(g.city)}"></label><label>State<input class="l-state" value="${gesc(g.state || (g.city ? 'FL' : ''))}"></label><label>Zip<input class="l-zip" value="${gesc(g.zip)}"></label></div>
+            <label>Note<input class="l-note" value="${gesc('From email: ' + t.subject)}"></label>
+            <div class="acts"><button class="btn pri" data-a="lead">Create customer</button></div>
+          </details>`
+      }
+      html += `<div class="sec">Job</div>${gmState.jobs.map(jobBtn).join('') || '<div class="muted">No jobs for this sender. Find one below (e.g. for a supplier invoice).</div>'}
+        <div class="row" style="margin-top:4px"><input class="q" placeholder="🔎 Find any job: name, number, customer, address" value="${gesc(gmState.q || '')}"></div>
+        <div class="found">${(gmState.found || []).map(jobBtn).join('')}</div>`
+      const jobOk = !!gmState.jobId
+      html += `<div class="sec">Send to the job</div>
+        <div class="acts"><button class="btn" data-a="save" ${jobOk ? '' : 'disabled'}>📝 Save email to job</button><button class="btn" data-a="task" ${jobOk ? '' : 'disabled'}>✅ Create task…</button>${gmState.jobId ? '<button class="btn" data-a="openjob">Open job ↗</button>' : ''}</div>
+        <div class="taskf" ${gmState.taskOpen ? '' : 'hidden'}>
+          <label>Task<input class="t-name" value="${gesc(t.subject.replace(/^(re|fw|fwd):\s*/i, '').slice(0, 120))}"></label>
+          <label>Due date<input class="t-due" type="date" value="${(() => { const d = new Date(Date.now() + 864e5); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()}"></label>
+          <label class="chk"><input type="checkbox" class="t-mine" checked> Also add to my Tasks</label>
+          <div class="acts"><button class="btn pri" data-a="task-go">Create task</button></div>
+        </div>`
+      if (t.attachments.length)
+        html += `<div class="sec">Attachments (${t.attachments.length})</div>${t.attachments.map((a, i) => `<label class="att"><input type="checkbox" data-att="${i}" checked> ${gesc(a.name)}</label>`).join('')}
+          <div class="acts"><button class="btn" data-a="atts" ${jobOk ? '' : 'disabled'}>📎 Send to job</button></div>`
+    }
+    html += `<div class="msg ${gmState.msgCls || ''}">${gesc(gmState.msg || '')}</div>`
+    const q = groot.activeElement && groot.activeElement.classList.contains('q')
+    const pos = q ? groot.activeElement.selectionStart : null
+    box.innerHTML = html
+    if (q) { const el = box.querySelector('.q'); el.focus(); el.setSelectionRange(pos, pos) }
+  }
+
+  const say = (msg, cls) => { gmState.msg = msg; gmState.msgCls = cls || ''; renderG() }
+  const curJob = () => [...gmState.jobs, ...(gmState.found || [])].find((j) => j.id === gmState.jobId)
+  async function rememberJob() {
+    const t = gmState.cur, j = curJob()
+    if (!t || !t.sender || !j) return
+    await ipcRenderer.invoke('jt:link-set', 'mail:' + t.sender.email.toLowerCase(), { jobId: j.id, jobName: j.name, jobNumber: String(j.number || ''), accountId: j.accountId || '', status: j.status || '' }).catch(() => {})
+  }
+  let qTimer = null
+  function wireG() {
+    groot.addEventListener('input', (e) => {
+      if (!e.target.classList.contains('q')) return
+      gmState.q = e.target.value
+      clearTimeout(qTimer)
+      qTimer = setTimeout(async () => {
+        if ((gmState.q || '').trim().length < 2) { gmState.found = []; return renderG() }
+        try { gmState.found = (await ipcRenderer.invoke('jt:jobs-search', gmState.q)).filter((j) => !gmState.jobs.some((x) => x.id === j.id)) } catch (err) { return say(gerr(err), 'err') }
+        renderG()
+      }, 350)
+    })
+    groot.addEventListener('toggle', (e) => { if (e.target.classList && e.target.classList.contains('lead')) gmState.leadOpen = e.target.open }, true)
+    groot.addEventListener('click', async (e) => {
+      const t = gmState.cur
+      const jb = e.target.closest('[data-job]')
+      if (jb) { gmState.jobId = jb.dataset.job; gmState.msg = ''; return renderG() }
+      const op = e.target.closest('[data-open]')
+      if (op) return ipcRenderer.send('jt:open', op.dataset.open)
+      const a = e.target.closest('[data-a]')?.dataset.a
+      if (!a || !t) return
+      const box = groot.querySelector('.in')
+      const val = (sel) => (box.querySelector(sel) || {}).value || ''
+      try {
+        if (a === 'openjob') return ipcRenderer.send('jt:open', `https://app.jobtread.com/jobs/${gmState.jobId}`)
+        if (a === 'task') { gmState.taskOpen = !gmState.taskOpen; return renderG() }
+        if (a === 'lead') {
+          say('Creating the customer…')
+          const r = await ipcRenderer.invoke('jt:add', { first: val('.l-name'), phone: val('.l-phone'), email: val('.l-email'), street: val('.l-street'), city: val('.l-city'), state: val('.l-state'), zip: val('.l-zip'), note: val('.l-note') })
+          gmState.leadOpen = false
+          say(r && r.existing ? 'Already in JobTread ✓' : 'Customer created in JobTread ✓', 'ok')
+          return lookup(t)
+        }
+        if (a === 'save') {
+          say('Saving…')
+          const text = `Email from ${t.sender ? `${t.sender.name} <${t.sender.email}>` : 'unknown'}${t.when ? ' · ' + t.when : ''}\nSubject: ${t.subject}\n\n${t.body}`.slice(0, 4000)
+          await ipcRenderer.invoke('jt:comment', { jobId: gmState.jobId, message: text, name: ('Email: ' + t.subject).slice(0, 120) })
+          await rememberJob()
+          return say('Email saved to the job ✓', 'ok')
+        }
+        if (a === 'task-go') {
+          const name = val('.t-name').trim()
+          if (!name) return say('Give the task a name.', 'err')
+          const due = val('.t-due')
+          say('Creating the task…')
+          await ipcRenderer.invoke('jt:task', { jobId: gmState.jobId, name, due, description: `From email "${t.subject}" (${t.sender ? t.sender.email : ''})\n\n${t.body}`.slice(0, 4000) })
+          if (box.querySelector('.t-mine')?.checked) {
+            const j = curJob()
+            await ipcRenderer.invoke('todos:add', { text: `${name}${j ? ' (' + j.name + ')' : ''}`, due: due ? new Date(due + 'T09:00').getTime() : null }).catch(() => {})
+          }
+          await rememberJob()
+          gmState.taskOpen = false
+          return say('Task created in JobTread ✓', 'ok')
+        }
+        if (a === 'atts') {
+          const picks = [...box.querySelectorAll('[data-att]')].filter((x) => x.checked).map((x) => t.attachments[Number(x.dataset.att)])
+          if (!picks.length) return say('Pick at least one attachment.', 'err')
+          let n = 0
+          for (const f of picks) {
+            say(`Sending ${++n} of ${picks.length}: ${f.name}…`)
+            await ipcRenderer.invoke('jt:upload-url', { targetType: 'job', targetId: gmState.jobId }, f)
+          }
+          await rememberJob()
+          return say(`${picks.length} attachment${picks.length > 1 ? 's' : ''} sent to the job ✓`, 'ok')
+        }
+      } catch (err) {
+        say(gerr(err), 'err')
+      }
+    })
+  }
+
+  // Gmail's keyboard shortcuts (c, j, k, e, #…) must not fire while you type in the panel.
+  for (const type of ['keydown', 'keypress', 'keyup']) {
+    window.addEventListener(type, (e) => { if (ghost && e.composedPath()[0] === ghost) e.stopImmediatePropagation() }, true)
+  }
+  // Check every 1.5 s which email is open (cheap: a few DOM lookups).
+  setInterval(() => {
+    if (!document.body) return
+    const t = openThread()
+    ensureG()
+    const id = t ? t.id : ''
+    if (id !== gmState.thread) {
+      gmState = { ...gmState, thread: id, cur: t, customer: undefined, jobs: [], jobId: '', found: [], q: '', msg: '', taskOpen: false, leadOpen: false }
+      if (t && gmState.open) lookup(t)
+      renderG()
+    } else if (t) {
+      gmState.cur = { ...t }
+      if (gmState.open && gmState.customer === undefined) lookup(t)
+      if (groot && !groot.querySelector('.pn').hidden && !groot.activeElement) {} // don't redraw while you type
+    }
+    if (!t && groot) renderG()
+  }, 1500)
+}

@@ -184,3 +184,14 @@ The **Tasks** app (blue checklist icon, under Unread) is your dashboard:
 - **Click the job** to open it in JobTread, switch to another job, or turn on "Send every new photo from this chat to the job" (works while CheckMate is open).
 - **Right-click a message** → "Add to JobTread job" (saved as a team-only comment) or "Create JobTread task…" (a to-do on the job, with a due date, and optionally in your Tasks too).
 - **Unread** shows the job name next to each linked conversation.
+
+## Gmail + JobTread
+
+Open an email in Gmail and click the blue **🔨 JobTread** button (bottom right):
+
+- See the sender's JobTread customer and jobs (found by email address).
+- **Save email to job**: the email goes on the job as a team-only comment.
+- **Create task…**: a to-do on the job with a due date (and in your Tasks, if you want).
+- **Attachments → Send to job**: photos go to the job's Photos folder, PDFs and other files to Files.
+- **New lead**: if the sender isn't in JobTread, "Create customer in JobTread" comes filled in with the name, email, phone and address from the signature.
+- **Supplier invoices**: type in "Find any job" (name, number, customer or address) to file an email or its PDF on any job. CheckMate remembers the job you used for each sender.
