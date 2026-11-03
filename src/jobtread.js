@@ -193,4 +193,33 @@ async function uploadFile(grantKey, { targetType, targetId, name, mime, bytes })
   return true
 }
 
-module.exports = { whoAmI, addCustomer, findCustomer, uploadFile, e164 }
+// A comment on a job (only your team sees it, not the customer).
+async function addComment(grantKey, { jobId, message, name }) {
+  if (!jobId) throw new Error('Pick a job first.')
+  const text = String(message || '').trim().slice(0, 4096)
+  if (!text) throw new Error('The message is empty.')
+  const d = await pave(grantKey, {
+    createComment: {
+      $: { targetType: 'job', targetId: String(jobId), message: text, ...(name ? { name: String(name).slice(0, 128) } : {}), isVisibleToCustomerRoles: false, isVisibleToVendorRoles: false, isVisibleToInternalRoles: true },
+      createdComment: { id: {} },
+    },
+  })
+  return { id: d.createComment?.createdComment?.id || null, url: `https://app.jobtread.com/jobs/${jobId}` }
+}
+
+// A to-do on a job. due: "YYYY-MM-DD" or empty.
+async function addTask(grantKey, { jobId, name, description, due }) {
+  if (!jobId) throw new Error('Pick a job first.')
+  const title = String(name || '').replace(/\s+/g, ' ').trim().slice(0, 200)
+  if (!title) throw new Error('Give the task a name.')
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(due || '')) ? String(due) : null
+  const d = await pave(grantKey, {
+    createTask: {
+      $: { targetType: 'job', targetId: String(jobId), name: title, isToDo: true, ...(description ? { description: String(description).slice(0, 4096) } : {}), ...(date ? { startDate: date, endDate: date } : {}) },
+      createdTask: { id: {} },
+    },
+  })
+  return { id: d.createTask?.createdTask?.id || null, url: `https://app.jobtread.com/jobs/${jobId}` }
+}
+
+module.exports = { whoAmI, addCustomer, findCustomer, uploadFile, addComment, addTask, e164 }

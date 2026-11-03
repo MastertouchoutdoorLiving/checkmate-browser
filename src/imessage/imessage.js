@@ -274,6 +274,7 @@ function renderHeader() {
   $('#hdr-fav').classList.toggle('on', isFav(c))
   $('#hdr-fav').title = isFav(c) ? 'Remove from Favorites' : 'Add to Favorites'
   $('#hdr-info').classList.toggle('on', showDetails)
+  jtHeader(c)
 }
 
 function renderDetails() {
@@ -936,14 +937,17 @@ $('#messages').addEventListener('contextmenu', (e) => {
   if (!m) return
   e.preventDefault()
   const menu = $('#ctx')
-  menu.innerHTML = `<button data-a="wa">Send to team on WhatsApp…</button><button data-a="copy">Copy message</button>${!m.fromMe && c.saved === false && !c.group ? '<button data-a="add">Add to Contacts…</button>' : ''}`
+  const jtOk = jt.connected && !c.group
+  menu.innerHTML = `${jtOk ? '<button data-a="jt-comment">🔨 Add to JobTread job</button><button data-a="jt-task">✅ Create JobTread task…</button>' : ''}<button data-a="wa">Send to team on WhatsApp…</button><button data-a="copy">Copy message</button>${!m.fromMe && c.saved === false && !c.group ? '<button data-a="add">Add to Contacts…</button>' : ''}`
   menu.style.left = Math.min(e.clientX, innerWidth - 220) + 'px'
-  menu.style.top = Math.min(e.clientY, innerHeight - 110) + 'px'
+  menu.style.top = Math.min(e.clientY, innerHeight - 190) + 'px'
   menu.hidden = false
   menu.onclick = (ev) => {
     const a = ev.target.closest('button')?.dataset.a
     menu.hidden = true
     if (a === 'wa') openWaForm(c, m)
+    if (a === 'jt-comment') jtAct('comment', c, m)
+    if (a === 'jt-task') jtAct('task', c, m)
     if (a === 'copy') navigator.clipboard.writeText(m.text || '').then(() => toast('Copied'), () => {})
     if (a === 'add') chatAction(c, 'add')
   }
@@ -1329,6 +1333,8 @@ async function jtPhoto(attId) {
   const jobs = [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)]
   sel.innerHTML = jobs.map((j) => `<option value="job:${esc(j.id)}">Job ${j.number ? '#' + esc(j.number) + ' · ' : ''}${esc(j.name)}${j.closed ? ' (closed)' : ''}</option>`).join('') +
     `<option value="account:${esc(d.id)}">Customer files · ${esc(d.name)}</option>`
+  const L = await jtLinkOf(c).catch(() => null)
+  if (L && jobs.some((j) => j.id === L.jobId)) sel.value = 'job:' + L.jobId
   $('#jtp-msg').textContent = ''
   $('#jtp-send').disabled = false
   $('#jtp-send').onclick = async () => {
@@ -1410,3 +1416,172 @@ document.addEventListener('click', async (e) => {
   el.value = text
   el.focus()
 })
+
+
+// ---- JobTread job linked to the conversation (shown at the top), notes and tasks from messages
+const jtLinkCache = new Map() // chat guid -> link or null
+let jtHdrFor = null
+const jobText = (L) => `${L.jobNumber ? '#' + L.jobNumber + ' ' : ''}${L.jobName}`
+async function jtLinkOf(c) {
+  if (!jtLinkCache.has(c.guid)) jtLinkCache.set(c.guid, await window.imsg.jtLinkGet(c.guid).catch(() => null))
+  return jtLinkCache.get(c.guid)
+}
+async function jtSaveLink(c, link) {
+  const saved = await window.imsg.jtLinkSet(c.guid, link)
+  jtLinkCache.set(c.guid, saved)
+  return saved
+}
+const linkFromJob = (d, j, extra = {}) => ({ jobId: j.id, jobName: j.name, jobNumber: String(j.number || ''), status: j.status || '', accountId: d.id, ...extra })
+function drawJobChip(c, L, d) {
+  const b = $('#chat-job')
+  if (currentChat()?.guid !== c.guid) return
+  b.classList.remove('pick')
+  if (L) {
+    b.hidden = false
+    b.innerHTML = `🔨 ${esc(jobText(L))}${L.status ? ` <span class="st">· ${esc(L.status)}</span>` : ''}${L.autoPhotos ? ' 📷' : ''} ▾`
+    b.title = 'JobTread job for this conversation'
+  } else if (d && d.jobs.length) {
+    b.hidden = false
+    b.classList.add('pick')
+    b.textContent = '🔨 Pick JobTread job ▾'
+    b.title = `${d.name} has ${d.jobs.length} jobs. Pick the one this conversation is about.`
+  } else b.hidden = true
+}
+async function jtHeader(c) {
+  const b = $('#chat-job')
+  if (!b) return
+  if (!c || c.group || !jt.connected) { b.hidden = true; jtHdrFor = null; return }
+  if (jtHdrFor === c.guid) return
+  jtHdrFor = c.guid
+  b.hidden = true
+  try {
+    let L = await jtLinkOf(c)
+    if (L) return drawJobChip(c, L)
+    const d = await jtLookup(c)
+    const open = d ? d.jobs.filter((j) => !j.closed) : []
+    if (d && open.length === 1) L = await jtSaveLink(c, linkFromJob(d, open[0], { auto: true }))
+    drawJobChip(c, L, d)
+  } catch {
+    if (jtHdrFor === c.guid) jtHdrFor = null
+  }
+}
+function closeJtMenu() { $('#jt-menu').hidden = true }
+$('#chat-job').addEventListener('click', async (e) => {
+  e.stopPropagation()
+  const c = currentChat()
+  if (!c) return
+  const menu = $('#jt-menu')
+  if (!menu.hidden) return closeJtMenu()
+  const r = $('#chat-job').getBoundingClientRect()
+  menu.style.top = r.bottom + 6 + 'px'
+  menu.style.left = Math.max(8, Math.min(r.left, innerWidth - 330)) + 'px'
+  menu.innerHTML = '<div class="jm-muted">Looking up…</div>'
+  menu.hidden = false
+  let d = null
+  try { d = await jtLookup(c) } catch (err) { menu.innerHTML = `<div class="jm-muted">${esc(errMsg(err))}</div>`; return }
+  const L = await jtLinkOf(c)
+  const jobs = d ? [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)] : []
+  menu.innerHTML = `<div class="jm-h">${d ? esc(d.name) + ' · jobs' : 'Not a JobTread customer'}</div>` +
+    jobs.map((j) => `<button data-job="${esc(j.id)}" class="${L && L.jobId === j.id ? 'on' : ''}"><span class="ck">${L && L.jobId === j.id ? '✓' : ''}</span><span>${j.number ? '#' + esc(j.number) + ' ' : ''}${esc(j.name)}</span><span class="js">${esc(j.closed ? 'Closed' : j.status)}</span></button>`).join('') +
+    (L ? `<hr><button data-a="open"><span class="ck">↗</span>Open job in JobTread</button>
+      <button data-a="photos"><span class="ck">${L.autoPhotos ? '✓' : ''}</span>Send every new photo from this chat to the job</button>
+      <button data-a="note"><span class="ck">🔨</span>Add a note to the job…</button>
+      <button data-a="task"><span class="ck">✅</span>Create a task on the job…</button>
+      <button data-a="unlink"><span class="ck">✕</span>Unlink this job</button>` : '')
+  menu.onclick = async (ev) => {
+    const btn = ev.target.closest('button')
+    if (!btn) return
+    try {
+      if (btn.dataset.job) {
+        const j = jobs.find((x) => x.id === btn.dataset.job)
+        await jtSaveLink(c, linkFromJob(d, j, { auto: false }))
+        toast(`Linked to ${j.name}`)
+      } else if (btn.dataset.a === 'open') window.imsg.jtOpen(`https://app.jobtread.com/jobs/${L.jobId}`)
+      else if (btn.dataset.a === 'photos') {
+        const on = !L.autoPhotos
+        await jtSaveLink(c, { ...L, autoPhotos: on })
+        toast(on ? 'New photos from this chat will go to the job (while CheckMate is open)' : 'Photos stay here')
+      } else if (btn.dataset.a === 'note') jtAct('comment', c, null)
+      else if (btn.dataset.a === 'task') jtAct('task', c, null)
+      else if (btn.dataset.a === 'unlink') { await jtSaveLink(c, null); jtLinkCache.set(c.guid, null) }
+    } catch (err) { toast(errMsg(err)) }
+    closeJtMenu()
+    jtHdrFor = null
+    const cur = currentChat()
+    if (cur) { const L2 = await jtLinkOf(cur); drawJobChip(cur, L2, d); jtHdrFor = cur.guid }
+  }
+})
+document.addEventListener('mousedown', (e) => {
+  if (!$('#jt-menu').hidden && !e.target.closest('#jt-menu') && !e.target.closest('#chat-job')) closeJtMenu()
+})
+
+// "Add to JobTread job" (a note on the job) and "Create JobTread task…" from a message
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+async function jtAct(mode, c, m) {
+  const modal = $('#jt-act')
+  const sel = $('#jta-job')
+  const msg = $('#jta-msg')
+  const isTask = mode === 'task'
+  $('#jta-title').textContent = isTask ? 'Create JobTread task' : 'Add to JobTread job'
+  $('#jta-sub').textContent = isTask ? 'A to-do on the job, so the team sees it in JobTread.' : 'Saved as a comment on the job. Only your team sees it, not the customer.'
+  $('#jta-name-l').hidden = $('#jta-due-l').hidden = $('#jta-mine-l').hidden = !isTask
+  $('#jta-send').textContent = isTask ? 'Create task' : 'Add to job'
+  const who = m ? (m.fromMe ? 'Me' : nameOf(c)) : ''
+  const when = m ? new Date(m.date).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''
+  const body = m ? m.text || ((m.attachments || []).length ? '[photo]' : '') : ''
+  $('#jta-text').value = m ? `${who} (iMessage, ${when}): ${body}` : ''
+  $('#jta-name').value = (m && m.text ? body : '').replace(/\s+/g, ' ').slice(0, 120)
+  const t = new Date(); t.setDate(t.getDate() + 1)
+  $('#jta-due').value = isTask ? isoDay(t) : ''
+  sel.innerHTML = ''
+  msg.className = ''
+  msg.textContent = 'Looking up the customer…'
+  $('#jta-send').disabled = true
+  modal.hidden = false
+  ;(isTask ? $('#jta-name') : $('#jta-text')).focus()
+  let d = null
+  try { d = await jtLookup(c) } catch (err) { msg.textContent = errMsg(err); return }
+  if (!d || !d.jobs.length) {
+    msg.textContent = d ? `${d.name} has no jobs in JobTread yet.` : 'This person is not a JobTread customer yet. Save the contact with "Also add to JobTread" first.'
+    return
+  }
+  const L = await jtLinkOf(c)
+  const jobs = [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)]
+  sel.innerHTML = jobs.map((j) => `<option value="${esc(j.id)}" ${L && L.jobId === j.id ? 'selected' : ''}>${j.number ? '#' + esc(j.number) + ' · ' : ''}${esc(j.name)}${j.closed ? ' (closed)' : ''}</option>`).join('')
+  msg.textContent = ''
+  $('#jta-send').disabled = false
+  $('#jta-form').onsubmit = async (ev) => {
+    ev.preventDefault()
+    const jobId = sel.value
+    const job = jobs.find((j) => j.id === jobId)
+    $('#jta-send').disabled = true
+    msg.className = ''
+    msg.textContent = 'Saving…'
+    try {
+      if (isTask) {
+        const name = $('#jta-name').value.trim()
+        if (!name) throw new Error('Give the task a name.')
+        const due = $('#jta-due').value
+        await window.imsg.jtTask({ jobId, name, due, description: $('#jta-text').value.trim() })
+        if ($('#jta-mine').checked) {
+          const at = due ? new Date(due + 'T09:00').getTime() : null
+          await window.imsg.addTodo({ text: `${name} (${job ? job.name : 'JobTread'})`, due: at }).catch(() => {})
+        }
+      } else {
+        const text = $('#jta-text').value.trim()
+        if (!text) throw new Error('Write the note first.')
+        await window.imsg.jtComment({ jobId, message: text, name: `iMessage from ${nameOf(c)}` })
+      }
+      if (!L || L.jobId !== jobId) await jtSaveLink(c, linkFromJob(d, job, { auto: false })).catch(() => {})
+      jtHdrFor = null
+      jtHeader(currentChat())
+      modal.hidden = true
+      toast(isTask ? 'Task created in JobTread' : 'Added to the JobTread job')
+    } catch (err) {
+      msg.className = 'err'
+      msg.textContent = errMsg(err)
+      $('#jta-send').disabled = false
+    }
+  }
+}
+$('#jta-cancel').addEventListener('click', () => ($('#jt-act').hidden = true))

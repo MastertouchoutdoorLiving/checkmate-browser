@@ -906,6 +906,45 @@ function registerIpc() {
     else showImessageChat(r.guid)
     return true
   })
+  // A conversation linked to one JobTread job
+  ipcMain.handle('jt:link-get', (e, key) => (qrAllowed(e) ? jtLinks()[String(key)] || null : null))
+  ipcMain.handle('jt:link-set', (e, key, link) => {
+    if (!isInternalSender(e)) throw new Error('Not allowed')
+    key = String(key || '')
+    if (!key) throw new Error('No conversation')
+    if (!link) delete jtLinks()[key]
+    else {
+      const old = jtLinks()[key] || {}
+      const L = {
+        jobId: String(link.jobId || ''),
+        jobName: String(link.jobName || '').slice(0, 120),
+        jobNumber: String(link.jobNumber || '').slice(0, 20),
+        status: String(link.status || '').slice(0, 60),
+        accountId: String(link.accountId || ''),
+        auto: !!link.auto,
+        autoPhotos: typeof link.autoPhotos === 'boolean' ? link.autoPhotos : !!old.autoPhotos,
+        photosSince: old.jobId === String(link.jobId || '') ? old.photosSince || 0 : 0,
+        sentAtt: old.jobId === String(link.jobId || '') ? old.sentAtt || [] : [],
+      }
+      if (!L.jobId) throw new Error('Pick a job')
+      if (L.autoPhotos && !old.autoPhotos) L.photosSince = Date.now()
+      jtLinks()[key] = L
+    }
+    store.save()
+    return jtLinks()[key] || null
+  })
+  ipcMain.handle('jt:comment', (e, c) => {
+    if (!isInternalSender(e) || !c) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    return jobtread.addComment(key, { jobId: String(c.jobId || ''), message: String(c.message || ''), name: String(c.name || '') })
+  })
+  ipcMain.handle('jt:task', (e, t) => {
+    if (!isInternalSender(e) || !t) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    return jobtread.addTask(key, { jobId: String(t.jobId || ''), name: String(t.name || ''), description: String(t.description || ''), due: String(t.due || '') })
+  })
   ipcMain.handle('jt:find', (e, q) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')
     const key = jtKey()
@@ -1481,6 +1520,73 @@ async function jtAdd(c) {
 // Both run while the browser is open (if it was closed at the time, they fire when it opens again).
 const reminders = () => (store.state.settings.reminders = store.state.settings.reminders || [])
 const scheduled = () => (store.state.settings.scheduled = store.state.settings.scheduled || [])
+// ---------------------------------------------------------------- iMessage chats linked to JobTread jobs
+// settings.jtLinks: chat guid -> { jobId, jobName, jobNumber, status, accountId, auto, autoPhotos, photosSince, sentAtt }
+const jtLinks = () => (store.state.settings.jtLinks = store.state.settings.jtLinks || {})
+const jtLookedUp = new Map() // chat guid -> time we last looked it up (so we don't ask JobTread again and again)
+let jtLookupBusy = false
+// For the Unread list: find the customer of chats we haven't linked yet, a few at a time, and link
+// the job when the customer has exactly one open job.
+async function jtAutoLink(chats) {
+  const key = jtKey()
+  if (!key || jtLookupBusy) return
+  const todo = chats.filter((c) => !c.group && !jtLinks()[c.guid] && Date.now() - (jtLookedUp.get(c.guid) || 0) > 6 * 3600e3).slice(0, 3)
+  if (!todo.length) return
+  jtLookupBusy = true
+  try {
+    for (const c of todo) {
+      jtLookedUp.set(c.guid, Date.now())
+      try {
+        const raw = c.rawHandle || c.handle || ''
+        const d = await jobtread.findCustomer(key, { phone: /@/.test(raw) ? '' : raw, email: /@/.test(raw) ? raw : '', name: c.saved ? c.title : '' })
+        const open = d ? d.jobs.filter((j) => !j.closed) : []
+        if (open.length === 1 && !jtLinks()[c.guid]) {
+          const j = open[0]
+          jtLinks()[c.guid] = { jobId: j.id, jobName: j.name, jobNumber: String(j.number || ''), status: j.status || '', accountId: d.id, auto: true, autoPhotos: false, photosSince: 0, sentAtt: [] }
+          store.save()
+        }
+      } catch {}
+    }
+  } finally {
+    jtLookupBusy = false
+  }
+}
+const jobLabel = (L) => (L ? `${L.jobNumber ? '#' + L.jobNumber + ' ' : ''}${L.jobName}` : '')
+
+// "Send every photo from this chat to the job": checks linked chats for new pictures every 30 s.
+let photoBusy = false
+async function jtAutoPhotos() {
+  const key = jtKey()
+  const links = Object.entries(jtLinks()).filter(([, L]) => L.autoPhotos && L.jobId)
+  if (!key || !links.length || photoBusy || process.platform !== 'darwin' && !process.env.MULTISPACE_TEST_CHATDB) return
+  photoBusy = true
+  try {
+    const chats = await imessage.listChats(60)
+    for (const [guid, L] of links) {
+      const c = chats.find((x) => x.guid === guid)
+      if (!c || c.date <= (L.photosSince || 0)) continue
+      const msgs = await imessage.listMessages(c.id, 40)
+      for (const m of msgs) {
+        if (m.date <= (L.photosSince || 0)) continue
+        for (const a of m.attachments || []) {
+          if (!/^image\//.test(a.mime) || (L.sentAtt || []).includes(a.id)) continue
+          try {
+            const f = await imessage.attachmentFile(a.id)
+            const name = String(a.name || path.basename(f.file)).replace(/\.(heic|heif|tiff?)$/i, '.jpg')
+            await jobtread.uploadFile(key, { targetType: 'job', targetId: L.jobId, name, mime: f.mime, bytes: fs.readFileSync(f.file) })
+            L.sentAtt = [...(L.sentAtt || []), a.id].slice(-300)
+            store.save()
+          } catch {}
+        }
+      }
+    }
+  } catch {
+  } finally {
+    photoBusy = false
+  }
+}
+setInterval(() => jtAutoPhotos().catch(() => {}), 30 * 1000)
+
 const todos = () => (store.state.settings.todos = store.state.settings.todos || [])
 const isInternalSender = (e) => !!(findTabByWebContents(e.sender) || {}).internal
 function showTasks() {
@@ -1670,6 +1776,7 @@ function imsgIsUnread(c, p) {
 }
 async function unifiedList() {
   const items = []
+  const unreadChats = []
   let imsgState = 'off'
   if (process.platform === 'darwin' || process.env.MULTISPACE_TEST_CHATDB) {
     try {
@@ -1679,8 +1786,10 @@ async function unifiedList() {
         const p = store.state.settings.imsg || {}
         for (const c of await imessage.listChats(120)) {
           if (p.hidden?.[c.guid] >= c.date || !imsgIsUnread(c, p)) continue
-          items.push({ kind: 'imsg', key: 'i:' + c.guid, guid: c.guid, name: c.title || c.handle, preview: c.last, count: c.unread || 0, date: c.date })
+          items.push({ kind: 'imsg', key: 'i:' + c.guid, guid: c.guid, name: c.title || c.handle, preview: c.last, count: c.unread || 0, date: c.date, job: jobLabel(jtLinks()[c.guid]), jobUrl: jtLinks()[c.guid] ? `https://app.jobtread.com/jobs/${jtLinks()[c.guid].jobId}` : '' })
+          unreadChats.push(c)
         }
+        jtAutoLink(unreadChats).catch(() => {})
       } else imsgState = 'no-access'
     } catch {
       imsgState = 'error'

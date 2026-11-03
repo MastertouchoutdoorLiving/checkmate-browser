@@ -178,7 +178,7 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .item .maybe { flex: none; }
 
 /* ---------- add contact */
-#contact-modal, #wa-modal, #jt-photo { position: fixed; inset: 0; background: rgba(43, 38, 32, .28); display: grid; place-items: center; z-index: 20; padding: 16px; }
+#contact-modal, #wa-modal, #jt-photo, #jt-act { position: fixed; inset: 0; background: rgba(43, 38, 32, .28); display: grid; place-items: center; z-index: 20; padding: 16px; }
 .sheet { width: 420px; max-width: 100%; background: var(--card); border-radius: 18px; padding: 22px 24px; box-shadow: 0 20px 60px rgba(60, 40, 20, .25); }
 .sheet h2 { margin: 0; font-size: 18px; }
 .sheet-sub { margin: 4px 0 14px; color: var(--muted); font-size: 12px; }
@@ -331,3 +331,20 @@ html, body { overflow: hidden; }
 #ai-pop p { margin: 6px 0 8px; font-size: 12.5px; color: var(--muted); }
 #ai-msg { font-size: 12px; margin-top: 6px; color: var(--muted); }
 #ai-msg.err { color: #9a3412; }
+
+/* JobTread job linked to the conversation */
+#chat-job { flex: 0 1 auto; min-width: 0; max-width: 340px; margin-left: 10px; border: 1px solid #cfdcf5; background: #eef3fd; color: #2f5297; border-radius: 14px; padding: 4px 11px; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+#chat-job:hover { background: #e2eafb; }
+#chat-job.pick { background: var(--card); border-style: dashed; color: var(--muted); }
+#chat-job .st { opacity: .75; }
+#jt-menu { position: fixed; z-index: 15; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 10px 30px rgba(60, 40, 20, .16); width: 320px; max-height: 70vh; overflow-y: auto; }
+#jt-menu .jm-h { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; padding: 6px 10px 4px; }
+#jt-menu button { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 8px; font-size: 13px; }
+#jt-menu button:hover { background: var(--hover); }
+#jt-menu button.on { font-weight: 650; }
+#jt-menu button .ck { width: 16px; flex: 0 0 auto; color: var(--accent); }
+#jt-menu button .js { margin-left: auto; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+#jt-menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 4px; }
+#jt-menu .jm-muted { color: var(--muted); font-size: 12.5px; padding: 8px 10px; }
+#jta-text { width: 100%; resize: vertical; font: inherit; }
+#jta-msg.err { color: #d03b40; }

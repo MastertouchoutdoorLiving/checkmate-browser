@@ -35,7 +35,7 @@ function row(it) {
   return `<button class="item" data-k="${esc(it.key)}">
     <span class="src ${it.kind}">${icon}</span>
     <span class="body">
-      <span class="top"><span class="name">${esc(it.name)}</span><span class="where">${where}${space}</span><span class="time">${esc(when(it))}</span></span>
+      <span class="top"><span class="name">${esc(it.name)}</span><span class="where">${where}${space}</span>${it.job ? `<span class="job" title="JobTread job">🔨 ${esc(it.job)}</span>` : ''}<span class="time">${esc(when(it))}</span></span>
       <span class="preview">${preview}</span>
     </span>${count}</button>`
 }

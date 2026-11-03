@@ -177,3 +177,10 @@ The **Tasks** app (blue checklist icon, under Unread) is your dashboard:
 - **Reply reminders**: every ⏰ Remind me you set in iMessage or WhatsApp. Click Open to jump to the chat.
 - **Scheduled messages**: every iMessage you set to Send later. Click × to cancel one.
 - **Settings · Connections** (also menu CheckMate Browser → Settings: JobTread & AI Keys…, or Cmd+,): paste your JobTread grant key and your Claude API key here (use the Paste button).
+
+## iMessage + JobTread jobs
+
+- **Job at the top of the chat**: when the customer is in JobTread, their job shows next to the name (e.g. "#1042 Pool remodel · Estimate sent"). With one open job it links by itself. With more than one, click "Pick JobTread job" once and it remembers.
+- **Click the job** to open it in JobTread, switch to another job, or turn on "Send every new photo from this chat to the job" (works while CheckMate is open).
+- **Right-click a message** → "Add to JobTread job" (saved as a team-only comment) or "Create JobTread task…" (a to-do on the job, with a due date, and optionally in your Tasks too).
+- **Unread** shows the job name next to each linked conversation.

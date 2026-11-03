@@ -59,6 +59,7 @@
           <div id="chat-title">Messages</div>
           <div id="chat-sub"></div>
         </div>
+        <button id="chat-job" type="button" hidden></button>
         <div class="hdr-actions" id="hdr-actions" hidden>
           <button id="hdr-add" class="icon-btn" title="Add to Contacts" hidden>
             <svg viewBox="0 0 24 24"><circle cx="10" cy="8" r="4"/><path d="M3 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5M19 8v6M16 11h6"/></svg>
@@ -175,6 +176,20 @@
       <div id="jtp-msg"></div>
       <div class="sheet-actions"><button type="button" id="jtp-cancel" class="btn">Cancel</button><button type="button" id="jtp-send" class="btn primary">Send</button></div>
     </div>
+  </div>
+  <div id="jt-menu" hidden></div>
+  <div id="jt-act" class="modal" hidden>
+    <form class="sheet" id="jta-form">
+      <h2 id="jta-title">Add to JobTread job</h2>
+      <p class="sheet-sub" id="jta-sub"></p>
+      <label>Job<select id="jta-job"></select></label>
+      <label id="jta-name-l">Task<input id="jta-name" autocomplete="off" /></label>
+      <label id="jta-due-l">Due date<input id="jta-due" type="date" /></label>
+      <label id="jta-text-l">Message<textarea id="jta-text" rows="5"></textarea></label>
+      <label class="jt-check" id="jta-mine-l"><input type="checkbox" id="jta-mine" checked /> Also add to my Tasks</label>
+      <div id="jta-msg"></div>
+      <div class="sheet-actions"><button type="button" id="jta-cancel" class="btn">Cancel</button><button type="submit" id="jta-send" class="btn primary">Add</button></div>
+    </form>
   </div>
   <div id="wa-modal" hidden>
     <form class="sheet" id="wa-form">
