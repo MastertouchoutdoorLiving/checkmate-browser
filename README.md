@@ -206,3 +206,13 @@ Open an email in Gmail and click the blue **🔨 JobTread** button (bottom right
 
 - **WhatsApp**: open ⚡ Tools, then **🔨 JobTread** (it shows the job's name once linked). Find the customer by phone, link the chat to a job, save a note, create a task, and optionally send new photos from the chat to the job. The job also shows in Unread.
 - **Quo**: the **🔨 JobTread** button (bottom right) reads the phone number of the open conversation. If it can't, type the phone, email or name and press Look up.
+
+## Follow-ups and payment reminders (iMessage or Quo)
+
+In **Tasks → Follow-ups** (and in the morning "Today" box):
+- **Estimates**: proposals sent 3–30 days ago that aren't approved yet.
+- **Overdue invoices**: invoices past their due date with a balance.
+
+Click **💬 Text**, check the message, pick **iMessage** or **Quo**, and send. A note goes on the JobTread job, and the item hides for a week. × hides it without sending.
+
+Each computer picks how it sends texts in **Settings · Connections → Send texts with** (iMessage or Quo). For Quo, paste a Quo API key (Quo → Settings → API → Generate API key, owner or admin) and pick the number to send from. The message templates can be edited there too.

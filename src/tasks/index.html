@@ -43,6 +43,8 @@
         <div id="todos"></div>
         <button id="show-done" class="link" hidden></button>
         <div id="done" hidden></div>
+        <h2>Follow-ups <span class="fu-tabs"><button class="fu-tab on" data-fu="estimate">Estimates</button><button class="fu-tab" data-fu="invoice">Overdue invoices</button></span> <button id="fu-refresh" class="link" title="Refresh">↻</button></h2>
+        <div id="followups"><div class="empty">Loading…</div></div>
         <h2>JobTread · assigned to you <button id="jt-refresh" class="link" title="Refresh">↻</button></h2>
         <div id="jt-tasks"><div class="empty">Loading…</div></div>
       </section>
@@ -60,6 +62,23 @@
           <div class="msg" id="jt-msg"></div>
         </div>
         <div class="card conn">
+          <div class="conn-top"><b>Send texts with</b><span id="via-state" class="pill"></span></div>
+          <div class="via-row"><label class="radio"><input type="radio" name="via" value="imessage"> iMessage (this Mac)</label><label class="radio"><input type="radio" name="via" value="quo"> Quo</label></div>
+          <p class="tip">Used for follow-ups and payment reminders. Your team can pick Quo on their computers.</p>
+          <div class="conn-top" style="margin-top:8px"><b>Quo</b><span id="quo-state" class="pill"></span></div>
+          <p class="tip" id="quo-tip">In Quo open Settings → API → Generate API key, copy it and paste it here.</p>
+          <div class="row" id="quo-row"><input id="quo-key" placeholder="Quo API key" autocomplete="off" /><button type="button" class="btn" data-paste="#quo-key">Paste</button><button type="button" class="btn primary" id="quo-save">Connect</button></div>
+          <label class="field" id="quo-from-l" hidden>Send from<select id="quo-from"></select></label>
+          <button type="button" class="link" id="quo-off" hidden>Disconnect Quo</button>
+          <div class="msg" id="quo-msg"></div>
+          <details class="tpl"><summary class="link">Message templates</summary>
+            <p class="tip">You can use {first}, {name}, {job}, {amount}, {number} and {days}.</p>
+            <label class="field">Estimate follow-up<textarea id="tpl-estimate" rows="3"></textarea></label>
+            <label class="field">Payment reminder<textarea id="tpl-invoice" rows="3"></textarea></label>
+            <button type="button" class="btn small" id="tpl-save">Save templates</button> <span class="msg" id="tpl-msg"></span>
+          </details>
+        </div>
+        <div class="card conn">
           <div class="conn-top"><b>AI reply suggestions</b><span id="ai-state" class="pill"></span></div>
           <p class="tip" id="ai-tip">Paste a Claude API key (console.anthropic.com → API Keys).</p>
           <div class="row" id="ai-row"><input id="ai-key" placeholder="sk-ant-…" autocomplete="off" /><button type="button" class="btn" data-paste="#ai-key">Paste</button><button type="button" class="btn primary" id="ai-save">Save</button></div>
@@ -68,6 +87,17 @@
         </div>
       </aside>
     </div>
+  </div>
+  <div id="send-modal" hidden>
+    <form class="card sheet" id="send-form">
+      <h3 id="sm-title">Text the customer</h3>
+      <p class="tip" id="sm-sub"></p>
+      <label class="field">To<input id="sm-to" autocomplete="off" /></label>
+      <label class="field">Send with<select id="sm-via"><option value="imessage">iMessage (this Mac)</option><option value="quo">Quo</option></select></label>
+      <label class="field">Message<textarea id="sm-text" rows="5"></textarea></label>
+      <div class="msg" id="sm-msg"></div>
+      <div class="sm-acts"><button type="button" class="btn" id="sm-cancel">Cancel</button><button type="submit" class="btn primary" id="sm-send">Send</button></div>
+    </form>
   </div>
   <script src="tasks.js"></script>
 </body>

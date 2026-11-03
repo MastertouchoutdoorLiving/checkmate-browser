@@ -348,6 +348,12 @@ async function sendToHandle(handle, text) {
         'end run',
       ],
       [text, handle]
+    ).catch(() =>
+      // Not on iMessage: send as a green text message (needs Text Message Forwarding from your iPhone)
+      osascript(
+        ['on run argv', 'tell application "Messages"', 'set s to 1st account whose service type = SMS', 'send (item 1 of argv) to participant (item 2 of argv) of s', 'end tell', 'end run'],
+        [text, handle]
+      )
     )
   }
 }

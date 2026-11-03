@@ -309,4 +309,35 @@ async function searchAll(grantKey, q) {
   return { customers, jobs }
 }
 
-module.exports = { whoAmI, addCustomer, findCustomer, uploadFile, addComment, addTask, searchJobs, myTasks, completeTask, searchAll, e164 }
+// Money to chase: estimates sent but not approved yet, and invoices past due.
+const isoDay = (d) => d.toISOString().slice(0, 10)
+async function moneyToChase(grantKey, { minDays = 3, maxDays = 30 } = {}) {
+  const o = await org(grantKey)
+  const now = Date.now()
+  const from = isoDay(new Date(now - maxDays * 864e5)), to = isoDay(new Date(now - minDays * 864e5)), today = isoDay(new Date(now))
+  const DOC = { id: {}, name: {}, number: {}, issueDate: {}, dueDate: {}, priceWithTax: {}, balance: {}, toName: {}, toPhoneNumber: {}, toEmailAddress: {}, job: { id: {}, name: {}, number: {} }, account: { id: {}, name: {} } }
+  const d = await pave(grantKey, {
+    organization: {
+      $: { id: o.id },
+      est: { _: 'documents', $: { size: 60, where: { and: [['type', 'customerOrder'], ['status', 'pending'], ['priceWithTax', '>', 0], ['issueDate', '>=', from], ['issueDate', '<=', to]] }, sortBy: [{ field: 'issueDate', order: 'desc' }] }, nodes: DOC },
+      inv: { _: 'documents', $: { size: 60, where: { and: [['type', 'customerInvoice'], ['status', 'pending'], ['balance', '>', 0], ['dueDate', '<', today]] }, sortBy: [{ field: 'dueDate', order: 'desc' }] }, count: {}, sum: { $: 'balance' }, nodes: DOC },
+    },
+  })
+  const shape = (x, kind) => ({
+    id: x.id, kind, name: x.name, number: x.number,
+    customer: x.toName || x.account?.name || '', phone: x.toPhoneNumber || '', email: x.toEmailAddress || '',
+    amount: kind === 'invoice' ? x.balance : x.priceWithTax,
+    date: kind === 'invoice' ? x.dueDate : x.issueDate,
+    days: Math.max(0, Math.floor((now - new Date((kind === 'invoice' ? x.dueDate : x.issueDate) + 'T12:00').getTime()) / 864e5)),
+    job: x.job ? { id: x.job.id, name: x.job.name, number: x.job.number } : null,
+    url: x.job ? `https://app.jobtread.com/jobs/${x.job.id}/documents/${x.id}` : 'https://app.jobtread.com/documents',
+  })
+  return {
+    estimates: (d.organization?.est?.nodes || []).map((x) => shape(x, 'estimate')),
+    invoices: (d.organization?.inv?.nodes || []).map((x) => shape(x, 'invoice')),
+    invoiceCount: d.organization?.inv?.count || 0,
+    invoiceTotal: d.organization?.inv?.sum || 0,
+  }
+}
+
+module.exports = { moneyToChase, whoAmI, addCustomer, findCustomer, uploadFile, addComment, addTask, searchJobs, myTasks, completeTask, searchAll, e164 }

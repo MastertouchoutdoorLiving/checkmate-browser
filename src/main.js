@@ -22,6 +22,7 @@ const fs = require('fs')
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
 const contactParse = require('./imessage/contact-parse.js')
 const jobtread = require('./jobtread.js')
+const quo = require('./quo.js')
 const updater = require('./updater.js')
 const {
   installChromeWebStore,
@@ -978,6 +979,84 @@ function registerIpc() {
     } catch {
       return []
     }
+  })
+  // ---- Texting customers: iMessage (this Mac) or Quo (your team's numbers)
+  const DEFAULT_TEMPLATES = {
+    estimate: 'Hi {first}, this is Nilson from Master Touch Pools. Just checking in on the {job} proposal we sent. Any questions I can answer?',
+    invoice: 'Hi {first}, this is Master Touch Pools. A friendly reminder that invoice #{number} for {job} has a balance of {amount}. Please let us know if you have any questions. Thank you!',
+  }
+  const sendSettings = () => {
+    const q = store.state.settings.quoCfg || {}
+    return { via: store.state.settings.sendVia || (process.platform === 'darwin' ? 'imessage' : 'quo'), quoConnected: !!secretGet('quo'), quoFrom: q.from || '', quoFromLabel: q.label || '', quoNumbers: q.numbers || [], templates: { ...DEFAULT_TEMPLATES, ...(store.state.settings.templates || {}) }, followed: store.state.settings.followed || {} }
+  }
+  ipcMain.handle('send:settings', (e) => (qrAllowed(e) ? sendSettings() : null))
+  ipcMain.handle('send:set', (e, p) => {
+    if (!isInternalSender(e) || !p) throw new Error('Not allowed')
+    if (p.via === 'imessage' || p.via === 'quo') store.state.settings.sendVia = p.via
+    if (typeof p.quoFrom === 'string') {
+      const cfg = (store.state.settings.quoCfg = store.state.settings.quoCfg || {})
+      const n = (cfg.numbers || []).find((x) => x.id === p.quoFrom)
+      cfg.from = p.quoFrom
+      cfg.label = n ? n.label : ''
+    }
+    if (p.templates) store.state.settings.templates = { estimate: String(p.templates.estimate || '').slice(0, 1500), invoice: String(p.templates.invoice || '').slice(0, 1500) }
+    store.save()
+    return sendSettings()
+  })
+  ipcMain.handle('quo:set-key', async (e, key) => {
+    if (!isInternalSender(e)) throw new Error('Not allowed')
+    key = String(key || '').trim()
+    if (!key) { secretSet('quo', ''); delete store.state.settings.quoCfg; store.save(); return sendSettings() }
+    const nums = await quo.numbers(key)
+    secretSet('quo', key)
+    const old = store.state.settings.quoCfg || {}
+    const from = nums.some((n) => n.id === old.from) ? old.from : (nums[0] || {}).id || ''
+    store.state.settings.quoCfg = { numbers: nums, from, label: (nums.find((n) => n.id === from) || {}).label || '' }
+    store.save()
+    return sendSettings()
+  })
+  ipcMain.handle('send:text', async (e, m) => {
+    if (!isInternalSender(e) || !m) throw new Error('Not allowed')
+    const text = String(m.text || '').trim()
+    if (!text) throw new Error('Write the message first.')
+    const to = String(m.to || '').trim()
+    if (!to) throw new Error('This customer has no phone number in JobTread.')
+    const via = m.via === 'quo' ? 'quo' : 'imessage'
+    if (via === 'quo') {
+      const key = secretGet('quo')
+      if (!key) throw new Error('Quo is not connected yet. Add your Quo API key in Settings · Connections.')
+      await quo.send(key, { from: (store.state.settings.quoCfg || {}).from, to, content: text })
+    } else {
+      if (process.platform !== 'darwin' && !process.env.MULTISPACE_TEST_CHATDB) throw new Error('iMessage only works on a Mac. Pick Quo.')
+      const d = to.replace(/\D/g, '')
+      await imessage.sendToHandle(d.length === 10 ? '+1' + d : '+' + d, text)
+    }
+    if (m.docId) {
+      const f = (store.state.settings.followed = store.state.settings.followed || {})
+      f[String(m.docId)] = Date.now()
+      for (const k of Object.keys(f)) if (Date.now() - f[k] > 60 * 864e5) delete f[k]
+      store.save()
+    }
+    // a note on the job, so the team knows it was sent
+    if (m.jobId && jtKey()) jobtread.addComment(jtKey(), { jobId: String(m.jobId), message: `Text sent by ${via === 'quo' ? 'Quo' : 'iMessage'} to ${to}:\n${text}`, name: m.docId ? 'Follow-up sent' : 'Text sent' }).catch(() => {})
+    return true
+  })
+  ipcMain.handle('send:skip', (e, docId) => {
+    if (!isInternalSender(e)) throw new Error('Not allowed')
+    const f = (store.state.settings.followed = store.state.settings.followed || {})
+    f[String(docId)] = Date.now()
+    store.save()
+    return true
+  })
+  let moneyCache = null
+  ipcMain.handle('jt:money', async (e, fresh) => {
+    if (!qrAllowed(e)) return null
+    const key = jtKey()
+    if (!key) return { connected: false, estimates: [], invoices: [] }
+    if (!fresh && moneyCache && moneyCache.key === key && Date.now() - moneyCache.at < 5 * 60e3) return moneyCache.data
+    const data = { connected: true, ...(await jobtread.moneyToChase(key)) }
+    moneyCache = { key, at: Date.now(), data }
+    return data
   })
   ipcMain.handle('jt:jobs-search', (e, q) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')

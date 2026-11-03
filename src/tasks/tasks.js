@@ -332,3 +332,142 @@ loadJt()
 loadUnanswered()
 setInterval(() => loadJt(), 5 * 60e3)
 setInterval(loadUnanswered, 10 * 60e3)
+
+
+// ---- Follow-ups: estimates not approved yet and overdue invoices, texted by iMessage or Quo
+let money = { connected: false, estimates: [], invoices: [] }
+let sendCfg = { via: 'imessage', templates: {}, followed: {} }
+let fuTab = 'estimate'
+const money$ = (n) => Number(n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+const recentlyDone = (id) => sendCfg.followed && sendCfg.followed[id] && Date.now() - sendCfg.followed[id] < 7 * 864e5
+const openFollowUps = (kind) => (kind === 'estimate' ? money.estimates : money.invoices).filter((x) => !recentlyDone(x.id))
+function renderFollowUps() {
+  const box = $('#followups')
+  document.querySelectorAll('.fu-tab').forEach((b) => {
+    b.classList.toggle('on', b.dataset.fu === fuTab)
+    const n = money.connected ? openFollowUps(b.dataset.fu).length : 0
+    b.textContent = (b.dataset.fu === 'estimate' ? 'Estimates' : 'Overdue invoices') + (n ? ` (${n})` : '')
+  })
+  if (!money.connected) { box.innerHTML = '<div class="empty">Connect JobTread below to see estimates to follow up and overdue invoices.</div>'; return }
+  if (money.error) { box.innerHTML = `<div class="empty">${esc(money.error)}</div>`; return }
+  const list = openFollowUps(fuTab)
+  if (!list.length) { box.innerHTML = `<div class="empty">${fuTab === 'estimate' ? 'No estimates waiting (sent 3 to 30 days ago).' : 'No overdue invoices.'} 🎉</div>`; return }
+  box.innerHTML = list.slice(0, 30).map((x) => `<div class="card fu" data-fu-id="${esc(x.id)}">
+    <div class="body"><div class="t">${esc(x.customer || 'Customer')}${x.job ? ' · ' + esc(x.job.name) : ''}</div>
+    <div class="s ${x.kind === 'invoice' ? 'late' : ''}">${esc(x.name)}${x.number ? ' #' + esc(x.number) : ''} · ${x.kind === 'invoice' ? `${x.days} days overdue` : `sent ${x.days} days ago`}${x.phone ? '' : ' · no phone'}</div></div>
+    <span class="amt">${money$(x.amount)}</span>
+    <button class="btn small primary" data-fu-act="text" ${x.phone ? '' : 'disabled'}>💬 Text</button>
+    <button class="btn small" data-fu-act="open" title="Open in JobTread">↗</button>
+    <button class="x" data-fu-act="skip" title="Hide for a week">×</button></div>`).join('') + (list.length > 30 ? `<div class="empty">+${list.length - 30} more</div>` : '') +
+    (fuTab === 'invoice' && money.invoiceCount ? `<div class="empty">${money.invoiceCount} overdue invoices · ${money$(money.invoiceTotal)} in total</div>` : '')
+}
+async function loadMoney(fresh) {
+  try { money = (await window.imsg.jtMoney(fresh)) || money } catch (err) { money = { connected: true, estimates: [], invoices: [], error: errText(err) } }
+  renderFollowUps()
+  renderSummary()
+}
+async function loadSend() {
+  try { sendCfg = (await window.imsg.sendSettings()) || sendCfg } catch {}
+  renderSendConn()
+  renderFollowUps()
+}
+document.querySelectorAll('.fu-tab').forEach((b) => b.addEventListener('click', () => { fuTab = b.dataset.fu; renderFollowUps() }))
+$('#fu-refresh').addEventListener('click', () => loadMoney(true))
+const allMoney = () => [...money.estimates, ...money.invoices]
+function fillTemplate(x) {
+  const t = (sendCfg.templates || {})[x.kind] || ''
+  const first = String(x.customer || '').trim().split(/\s+/)[0] || 'there'
+  return t.replace(/\{first\}/g, first).replace(/\{name\}/g, x.customer || '').replace(/\{job\}/g, (x.job && x.job.name) || 'your project')
+    .replace(/\{amount\}/g, money$(x.amount)).replace(/\{number\}/g, x.number || '').replace(/\{days\}/g, x.days)
+}
+let sending = null
+function openSend(x) {
+  sending = x
+  $('#sm-title').textContent = x.kind === 'invoice' ? 'Payment reminder' : 'Estimate follow-up'
+  $('#sm-sub').textContent = `${x.customer} · ${x.job ? x.job.name + ' · ' : ''}${money$(x.amount)}`
+  $('#sm-to').value = x.phone || ''
+  $('#sm-via').value = sendCfg.via
+  $('#sm-via').options[1].textContent = sendCfg.quoConnected ? `Quo · ${sendCfg.quoFromLabel || 'pick a number in Settings'}` : 'Quo (not connected yet)'
+  $('#sm-text').value = fillTemplate(x)
+  $('#sm-msg').textContent = ''
+  $('#sm-msg').className = 'msg'
+  $('#sm-send').disabled = false
+  $('#send-modal').hidden = false
+  $('#sm-text').focus()
+}
+document.addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-fu-act]')
+  const sumB = e.target.closest('[data-sum-fu]')
+  if (sumB) { const x = allMoney().find((y) => y.id === sumB.dataset.sumFu); if (x) openSend(x); return }
+  if (!b) return
+  const x = allMoney().find((y) => y.id === b.closest('[data-fu-id]').dataset.fuId)
+  if (!x) return
+  if (b.dataset.fuAct === 'text') openSend(x)
+  if (b.dataset.fuAct === 'open') window.imsg.jtOpen(x.url)
+  if (b.dataset.fuAct === 'skip') { await window.imsg.skipFollowUp(x.id); await loadSend(); renderSummary() }
+})
+$('#sm-cancel').addEventListener('click', () => ($('#send-modal').hidden = true))
+$('#send-form').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const x = sending
+  if (!x) return
+  $('#sm-send').disabled = true
+  $('#sm-msg').className = 'msg'
+  $('#sm-msg').textContent = 'Sending…'
+  try {
+    await window.imsg.sendText({ to: $('#sm-to').value, via: $('#sm-via').value, text: $('#sm-text').value, docId: x.id, jobId: x.job && x.job.id })
+    $('#send-modal').hidden = true
+    await loadSend()
+    renderSummary()
+  } catch (err) {
+    $('#sm-msg').className = 'msg err'
+    $('#sm-msg').textContent = errText(err)
+    $('#sm-send').disabled = false
+  }
+})
+
+// ---- Connections: iMessage or Quo, Quo key and number, templates
+function renderSendConn() {
+  document.querySelectorAll('input[name="via"]').forEach((r) => (r.checked = r.value === sendCfg.via))
+  $('#via-state').textContent = sendCfg.via === 'quo' ? 'Quo' : 'iMessage'
+  $('#via-state').classList.add('on')
+  $('#quo-state').textContent = sendCfg.quoConnected ? 'Connected' : 'Not connected'
+  $('#quo-state').classList.toggle('on', !!sendCfg.quoConnected)
+  $('#quo-row').hidden = $('#quo-tip').hidden = !!sendCfg.quoConnected
+  $('#quo-off').hidden = $('#quo-from-l').hidden = !sendCfg.quoConnected
+  $('#quo-from').innerHTML = (sendCfg.quoNumbers || []).map((n) => `<option value="${esc(n.id)}" ${n.id === sendCfg.quoFrom ? 'selected' : ''}>${esc(n.label)}</option>`).join('')
+  if (document.activeElement !== $('#tpl-estimate')) $('#tpl-estimate').value = sendCfg.templates.estimate || ''
+  if (document.activeElement !== $('#tpl-invoice')) $('#tpl-invoice').value = sendCfg.templates.invoice || ''
+}
+document.querySelectorAll('input[name="via"]').forEach((r) => r.addEventListener('change', async () => { sendCfg = await window.imsg.setSend({ via: r.value }); renderSendConn() }))
+$('#quo-from').addEventListener('change', async () => { sendCfg = await window.imsg.setSend({ quoFrom: $('#quo-from').value }); renderSendConn() })
+$('#quo-save').addEventListener('click', async () => {
+  const k = $('#quo-key').value.trim()
+  if (!k) return $('#quo-key').focus()
+  $('#quo-msg').className = 'msg'
+  $('#quo-msg').textContent = 'Checking…'
+  try { sendCfg = await window.imsg.quoSetKey(k); $('#quo-key').value = ''; $('#quo-msg').textContent = 'Connected ✓' } catch (err) { $('#quo-msg').className = 'msg err'; $('#quo-msg').textContent = errText(err) }
+  renderSendConn()
+})
+$('#quo-off').addEventListener('click', async () => { if (!confirm('Disconnect Quo?')) return; sendCfg = await window.imsg.quoSetKey(''); renderSendConn() })
+$('#tpl-save').addEventListener('click', async () => {
+  sendCfg = await window.imsg.setSend({ templates: { estimate: $('#tpl-estimate').value, invoice: $('#tpl-invoice').value } })
+  $('#tpl-msg').textContent = 'Saved ✓'
+  setTimeout(() => ($('#tpl-msg').textContent = ''), 2000)
+})
+
+// add follow-ups to the "Today" box
+const _renderSummary = renderSummary
+renderSummary = function () {
+  _renderSummary()
+  if (!money.connected) return
+  const est = openFollowUps('estimate'), inv = openFollowUps('invoice')
+  const line = (x) => `<button class="sum-line ${x.kind === 'invoice' ? 'late' : ''}" data-sum-fu="${esc(x.id)}">${esc(x.customer || 'Customer')} <span class="m">· ${money$(x.amount)} · ${x.kind === 'invoice' ? x.days + 'd overdue' : x.days + 'd ago'}</span></button>`
+  const col = (title, list, red) => `<div class="sum-col"><h3>${title} <span class="n ${red && list.length ? 'red' : ''}">${list.length}</span></h3>${list.slice(0, 5).map(line).join('') || '<div class="sum-line"><span class="m">Nothing</span></div>'}${list.length > 5 ? `<div class="sum-line"><span class="m">+${list.length - 5} more below</span></div>` : ''}</div>`
+  const grid = document.querySelector('#sum-body .sum-grid')
+  if (grid) grid.insertAdjacentHTML('beforeend', col('Estimates to follow up', est) + col('Overdue invoices', inv, true))
+}
+window.imsg.onSummary(() => loadMoney(true))
+loadSend()
+loadMoney()
+setInterval(() => loadMoney(), 10 * 60e3)
