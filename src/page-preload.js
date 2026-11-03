@@ -3,6 +3,9 @@
 // so sites like Google would hang on "Complete sign-in using your passkey".
 // Hiding passkey support makes them fall back to password + normal 2-step verification.
 const { contextBridge, webFrame } = require('electron')
+// WhatsApp helper buttons (Remind me, Quick replies, Save contact): shown or hidden with one toggle.
+var waTools = { open: false }
+try { waTools.open = localStorage.getItem('__ms_wa_tools') === 'open' } catch {}
 
 const hidePasskeys = () => {
   try {
@@ -275,7 +278,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     host.id = '__ms_wa_contact'
     root = host.attachShadow({ mode: 'closed' })
     root.innerHTML = `<style>
-      .btn{position:fixed;right:24px;bottom:84px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font:500 13px -apple-system,system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
+      .btn{position:fixed;right:24px;bottom:128px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font:500 13px -apple-system,system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
       .btn:hover{background:#f0f2f5}
       .bg{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
       .card{background:#fff;border-radius:12px;padding:20px 22px;width:400px;max-height:90vh;overflow:auto;font:13px -apple-system,system-ui,sans-serif;color:#111b21;box-shadow:0 10px 40px rgba(0,0,0,.3)}
@@ -420,7 +423,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     if (!document.body) return
     ensureUi()
     const show = !!document.querySelector('#main header')
-    root.querySelector('.btn').hidden = !show
+    root.querySelector('.btn').hidden = !show || !waTools.open
   }, 1000)
 }
 
@@ -560,9 +563,9 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     qroot = qhost.attachShadow({ mode: 'closed' })
     qroot.innerHTML = `<style>
       *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
-      .btn{position:fixed;right:24px;bottom:128px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
+      .btn{position:fixed;right:24px;bottom:172px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
       .btn:hover{background:#f0f2f5}
-      .pop{position:fixed;right:24px;bottom:172px;z-index:2147483647;width:420px;max-height:60vh;display:flex;flex-direction:column;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:10px;color:#111b21;font-size:13px}
+      .pop{position:fixed;right:24px;bottom:216px;z-index:2147483647;width:420px;max-height:60vh;display:flex;flex-direction:column;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:10px;color:#111b21;font-size:13px}
       .head{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 8px}
       button{cursor:pointer;font-size:12.5px}
       .head button,.acts button{border:1px solid #d1d7db;background:#fff;border-radius:8px;padding:4px 10px}
@@ -690,7 +693,8 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
   setInterval(() => {
     if (!document.body) return
     ensureQr()
-    qroot.querySelector('.btn').hidden = !document.querySelector('#main footer')
+    qroot.querySelector('.btn').hidden = !document.querySelector('#main footer') || !waTools.open
+    if (!waTools.open) qroot.querySelector('.pop').hidden = true
   }, 1000)
 }
 
@@ -716,13 +720,13 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     rroot = rhost.attachShadow({ mode: 'closed' })
     rroot.innerHTML = `<style>
       *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
-      .btn{position:fixed;right:24px;bottom:172px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
+      .btn{position:fixed;right:24px;bottom:216px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
       .btn:hover{background:#f0f2f5}
-      .menu{position:fixed;right:24px;bottom:216px;z-index:2147483647;width:220px;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:6px;font-size:13px;color:#111b21}
+      .menu{position:fixed;right:24px;bottom:260px;z-index:2147483647;width:220px;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:6px;font-size:13px;color:#111b21}
       .menu b{display:block;font-size:12px;color:#667781;padding:6px 8px 4px}
       .menu button{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px}
       .menu button:hover{background:#f0f2f5}
-      .ok{position:fixed;right:24px;bottom:216px;z-index:2147483647;background:#111b21;color:#fff;border-radius:10px;padding:8px 12px;font-size:13px}
+      .ok{position:fixed;right:24px;bottom:260px;z-index:2147483647;background:#111b21;color:#fff;border-radius:10px;padding:8px 12px;font-size:13px}
       [hidden]{display:none!important}
     </style>
     <button class="btn" hidden>⏰ Remind me</button>
@@ -756,7 +760,8 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
   setInterval(() => {
     if (!document.body) return
     ensureR()
-    rroot.querySelector('.btn').hidden = !document.querySelector('#main footer')
+    rroot.querySelector('.btn').hidden = !document.querySelector('#main footer') || !waTools.open
+    if (!waTools.open) rroot.querySelector('.menu').hidden = true
   }, 1000)
 }
 
@@ -853,4 +858,38 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       }
     }
   })
+}
+
+
+// ---------------------------------------------------------------- WhatsApp: show / hide the helper buttons
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  let thost, troot
+  function ensureT() {
+    if (thost && document.body.contains(thost)) return
+    thost = document.createElement('div')
+    thost.id = '__ms_wa_toggle'
+    troot = thost.attachShadow({ mode: 'closed' })
+    troot.innerHTML = `<style>
+      .t{position:fixed;right:24px;bottom:84px;z-index:2147483646;height:36px;min-width:36px;padding:0 12px;border-radius:18px;background:#fff;color:#111b21;border:1px solid #d1d7db;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;font:500 13px -apple-system,system-ui,sans-serif;display:flex;align-items:center;gap:6px}
+      .t:hover{background:#f0f2f5}
+      [hidden]{display:none!important}
+    </style><button class="t" hidden></button>`
+    troot.querySelector('.t').addEventListener('click', () => {
+      waTools.open = !waTools.open
+      try { localStorage.setItem('__ms_wa_tools', waTools.open ? 'open' : 'closed') } catch {}
+      draw()
+    })
+    document.body.appendChild(thost)
+  }
+  function draw() {
+    const t = troot.querySelector('.t')
+    t.textContent = waTools.open ? '✕ Hide tools' : '⚡ Tools'
+    t.title = waTools.open ? 'Hide Remind me, Quick replies and Save contact' : 'Show Remind me, Quick replies and Save contact'
+  }
+  setInterval(() => {
+    if (!document.body) return
+    ensureT()
+    draw()
+    troot.querySelector('.t').hidden = !document.querySelector('#main footer')
+  }, 1000)
 }
