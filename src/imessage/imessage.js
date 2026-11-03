@@ -1344,3 +1344,54 @@ async function jtPhoto(attId) {
   }
 }
 $('#jtp-cancel').addEventListener('click', () => ($('#jt-photo').hidden = true))
+
+
+// ---- 🎤 dictation (the Mac's own Dictation) and ✨ AI reply suggestion
+$('#mic-btn').addEventListener('click', async () => {
+  $('#text').focus()
+  const ok = await window.imsg.dictate().catch(() => false)
+  if (!ok) toast('Dictation works on a Mac. Turn it on in System Settings → Keyboard → Dictation.')
+})
+async function aiRun() {
+  const c = current && !current.compose ? current : null
+  if (!c) return toast('Open a conversation first.')
+  const btn = $('#ai-btn')
+  if (btn.classList.contains('busy')) return
+  btn.classList.add('busy')
+  try {
+    const messages = (curMsgs || []).filter((m) => m.text).map((m) => ({ fromMe: m.fromMe, text: m.text }))
+    const reply = await window.imsg.aiSuggest({ name: nameOf(c), messages, draft: $('#text').value })
+    if (current !== c && current?.id !== c.id) return
+    const box = $('#text')
+    box.focus()
+    box.select()
+    if (!document.execCommand('insertText', false, reply)) box.value = reply
+    box.dispatchEvent(new Event('input', { bubbles: true }))
+  } catch (err) {
+    const m = errMsg(err)
+    if (/NO_KEY/.test(m)) $('#ai-pop').hidden = false
+    else toast(m)
+  } finally {
+    btn.classList.remove('busy')
+  }
+}
+$('#ai-btn').addEventListener('click', aiRun)
+$('#ai-save').addEventListener('click', async () => {
+  const k = $('#ai-key').value.trim()
+  if (!k) return $('#ai-key').focus()
+  $('#ai-msg').className = ''
+  $('#ai-msg').textContent = 'Checking…'
+  try {
+    await window.imsg.aiSetKey(k)
+    $('#ai-key').value = ''
+    $('#ai-pop').hidden = true
+    toast('AI suggestions are on')
+    aiRun()
+  } catch (err) {
+    $('#ai-msg').className = 'err'
+    $('#ai-msg').textContent = errMsg(err)
+  }
+})
+document.addEventListener('mousedown', (e) => {
+  if (!$('#ai-pop').hidden && !e.target.closest('#ai-pop') && !e.target.closest('#ai-btn')) $('#ai-pop').hidden = true
+})

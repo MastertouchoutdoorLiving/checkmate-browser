@@ -263,8 +263,8 @@ html, body { overflow: hidden; }
 .inbox-head { min-width: 0; }
 
 /* quick replies */
-#qr-btn { width: 36px; height: 36px; border: 0; background: none; color: var(--muted); display: grid; place-items: center; flex: none; border-radius: 10px; }
-#qr-btn:hover, #qr-btn.on { color: var(--accent); background: var(--accent-soft); }
+#qr-btn, #ai-btn, #mic-btn { width: 36px; height: 36px; border: 0; background: none; color: var(--muted); display: grid; place-items: center; flex: none; border-radius: 10px; }
+#qr-btn:hover, #qr-btn.on, #ai-btn:hover, #mic-btn:hover { color: var(--accent); background: var(--accent-soft); }
 #send-form { position: relative; }
 #qr-pop { position: absolute; left: 0; right: 0; bottom: 88px; max-width: 560px; z-index: 40; background: #fff; border: 1px solid var(--line2); border-radius: 14px;
   box-shadow: 0 12px 36px rgba(60, 40, 20, .16); padding: 10px; max-height: 60vh; display: flex; flex-direction: column; }
@@ -324,3 +324,10 @@ html, body { overflow: hidden; }
 #jt-photo select { width: 100%; margin-top: 4px; border: 1px solid var(--line2); border-radius: 8px; padding: 7px; font: inherit; }
 #jtp-msg { font-size: 12.5px; color: var(--muted); min-height: 18px; margin: 4px 0 8px; }
 #jtp-msg.err { color: #9a3412; }
+
+#ai-btn.busy svg { animation: aispin 1s linear infinite; }
+@keyframes aispin { to { transform: rotate(360deg); } }
+#ai-pop { position: absolute; left: 0; right: 0; bottom: 88px; max-width: 460px; z-index: 40; background: #fff; border: 1px solid var(--line2); border-radius: 14px; box-shadow: 0 12px 36px rgba(60,40,20,.16); padding: 12px 14px; }
+#ai-pop p { margin: 6px 0 8px; font-size: 12.5px; color: var(--muted); }
+#ai-msg { font-size: 12px; margin-top: 6px; color: var(--muted); }
+#ai-msg.err { color: #9a3412; }

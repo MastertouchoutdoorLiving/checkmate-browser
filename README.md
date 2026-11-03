@@ -71,6 +71,23 @@ Saved messages you can drop into iMessage or WhatsApp with one click. In iMessag
 
 The **Save contact** form (iMessage and WhatsApp) has an **Also add to JobTread** box. Connect it once: in JobTread open app.jobtread.com/grants, create a grant key and paste it in. It is stored encrypted. Each save then creates the customer in JobTread with a contact (name, email, phone, notes) and the job location (address). If a customer with the same name already exists, nothing is duplicated.
 
+## More helpers in iMessage and WhatsApp
+
+- **Remind me to reply:** ⏰ in the iMessage conversation header, or **⏰ Remind me** in WhatsApp. Pick 1 hour, 3 hours, tomorrow 9 AM or Monday 9 AM. At that time it beeps, shows a notification, and clicking it opens the conversation.
+- **Send later (iMessage):** write the message, click the clock next to Send and pick when. Scheduled messages show above the message box, where you can cancel them. The browser has to be open at that time; if it was closed, the message goes out when you open it again.
+- **JobTread card:** with JobTread connected, the iMessage details panel shows the customer, address and jobs (found by phone, email or name). Click to open in JobTread.
+- **Pictures to JobTread:** in iMessage click a picture → **Send to JobTread**. In WhatsApp right-click a picture → **Send picture to JobTread…**. Pick the job; it goes in the job's Photos folder.
+- **✨ Suggest reply:** writes a short reply from the conversation (and improves your draft if you started one). Needs a Claude API key from console.anthropic.com, pasted once.
+- **🎤 Dictate:** uses the Mac's own Dictation (turn it on in System Settings → Keyboard → Dictation).
+
+## Memory saver
+
+Apps you haven't opened for 30 minutes go to sleep and free their memory; clicking one wakes it up. Only the app you were on loads at startup. WhatsApp, Gmail, Quo and the built-in pages always stay awake so unread counts and notifications keep working. Turn it off in View → Save Memory.
+
+## Automatic updates
+
+Installed copies check GitHub for a new version every few hours, download it in the background and ask to restart. Use the app menu → **Check for Updates…** to check now. New team members install from the latest release: https://github.com/MastertouchoutdoorLiving/checkmate-browser/releases/latest (download **CheckMate-Browser.dmg**, open it, drag the app into Applications; the first time, right-click the app → Open, or allow it in System Settings → Privacy & Security → Open Anyway).
+
 ## Run it
 
 You need [Node.js](https://nodejs.org) 20 or newer.

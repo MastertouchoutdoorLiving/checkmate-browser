@@ -562,10 +562,13 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
       .btn{position:fixed;right:24px;bottom:128px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
       .btn:hover{background:#f0f2f5}
-      .pop{position:fixed;right:24px;bottom:172px;z-index:2147483647;width:380px;max-height:60vh;display:flex;flex-direction:column;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:10px;color:#111b21;font-size:13px}
+      .pop{position:fixed;right:24px;bottom:172px;z-index:2147483647;width:420px;max-height:60vh;display:flex;flex-direction:column;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:10px;color:#111b21;font-size:13px}
       .head{display:flex;justify-content:space-between;align-items:center;padding:2px 4px 8px}
       button{cursor:pointer;font-size:12.5px}
       .head button,.acts button{border:1px solid #d1d7db;background:#fff;border-radius:8px;padding:4px 10px}
+      .hb{display:flex;gap:6px}
+      .aik{border:1px solid #e9edef;border-radius:10px;padding:8px;margin-bottom:8px}
+      .r2{display:flex;gap:6px}.r2 input{flex:1;border:1px solid #d1d7db;border-radius:8px;padding:6px 8px;font-size:13px}.r2 button{border:0;border-radius:8px;background:#00a884;color:#fff;padding:0 12px}
       .q{border:1px solid #d1d7db;border-radius:8px;padding:7px 9px;font-size:13px;margin-bottom:6px;outline:none}
       .list,.ed{overflow-y:auto;min-height:0}
       .it{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px}
@@ -581,7 +584,8 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     </style>
     <button class="btn" hidden>⚡ Quick replies</button>
     <div class="pop" hidden>
-      <div class="head"><b>Quick replies</b><button class="edit">Edit</button></div>
+      <div class="head"><b>Quick replies</b><span class="hb"><button class="ai">✨ Suggest reply</button><button class="mic" title="Dictate">🎤</button><button class="edit">Edit</button></span></div>
+      <div class="aik" hidden><div class="tip">Paste a Claude API key once (console.anthropic.com → API Keys).</div><div class="r2"><input class="aikey" placeholder="sk-ant-…"/><button class="aisave">Save</button></div><div class="aim tip"></div></div>
       <input class="q" placeholder="Search quick replies"/>
       <div class="list"></div>
       <div class="ed" hidden></div>
@@ -596,6 +600,61 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       qroot.querySelector('.q').focus()
     })
     qroot.querySelector('.q').addEventListener('input', renderList)
+    const errT2 = (err) => String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+    const readConvo = () => {
+      const main = document.querySelector('#main')
+      if (!main) return []
+      let rows = [...main.querySelectorAll('.message-in, .message-out')]
+      rows = rows.filter((r) => !rows.some((o) => o !== r && o.contains(r)))
+      return rows.map((r) => {
+        const t = r.querySelector('[data-pre-plain-text]') || r.querySelector('.copyable-text') || r.querySelector('.selectable-text')
+        return { fromMe: r.classList.contains('message-out'), text: ((t && t.innerText) || '').trim() }
+      }).filter((m) => m.text).slice(-25)
+    }
+    const aiBtn = qroot.querySelector('.ai')
+    const suggest = async () => {
+      aiBtn.textContent = '✨ Thinking…'
+      aiBtn.disabled = true
+      try {
+        const box = document.querySelector('#main footer div[contenteditable="true"]')
+        const draft = box ? box.innerText.trim() : ''
+        const reply = await ipcRenderer.invoke('ai:suggest', { name: chatName() || '', messages: readConvo(), draft })
+        pop.hidden = true
+        if (box && draft) {
+          box.focus()
+          document.execCommand('selectAll')
+        }
+        insert(reply)
+      } catch (err) {
+        const m = errT2(err)
+        if (/NO_KEY/.test(m)) qroot.querySelector('.aik').hidden = false
+        else qroot.querySelector('.aim').textContent = m, (qroot.querySelector('.aik').hidden = false)
+      } finally {
+        aiBtn.textContent = '✨ Suggest reply'
+        aiBtn.disabled = false
+      }
+    }
+    aiBtn.addEventListener('click', suggest)
+    qroot.querySelector('.aisave').addEventListener('click', async () => {
+      const k = qroot.querySelector('.aikey').value.trim()
+      if (!k) return
+      qroot.querySelector('.aim').textContent = 'Checking…'
+      try {
+        await ipcRenderer.invoke('ai:set-key', k)
+        qroot.querySelector('.aikey').value = ''
+        qroot.querySelector('.aik').hidden = true
+        qroot.querySelector('.aim').textContent = ''
+        suggest()
+      } catch (err) {
+        qroot.querySelector('.aim').textContent = errT2(err)
+      }
+    })
+    qroot.querySelector('.mic').addEventListener('click', async () => {
+      pop.hidden = true
+      const box = document.querySelector('#main footer div[contenteditable="true"]')
+      if (box) box.focus()
+      await ipcRenderer.invoke('dictate').catch(() => false)
+    })
     qroot.querySelector('.q').addEventListener('keydown', (e) => {
       if (e.key === 'Escape') pop.hidden = true
       if (e.key === 'Enter') qroot.querySelector('.it')?.click()

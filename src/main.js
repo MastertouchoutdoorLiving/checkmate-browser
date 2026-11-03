@@ -890,6 +890,26 @@ function registerIpc() {
     const name = String(a.name || path.basename(a.file || a.path || 'Photo.jpg')).replace(/\.(heic|heif|tiff?)$/i, '.jpg')
     return jobtread.uploadFile(key, { ...jtTarget(t), name, mime: a.mime && !/heic|heif|tiff/i.test(a.mime) ? a.mime : 'image/jpeg', bytes })
   })
+  ipcMain.handle('dictate', (e) => {
+    if (!qrAllowed(e) || process.platform !== 'darwin') return false
+    e.sender.focus()
+    Menu.sendActionToFirstResponder('startDictation:')
+    return true
+  })
+  ipcMain.handle('ai:status', (e) => ({ connected: qrAllowed(e) && !!secretGet('ai') }))
+  ipcMain.handle('ai:set-key', async (e, key) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    key = String(key || '').trim()
+    if (!key) { secretSet('ai', ''); return { connected: false } }
+    await aiCall(key, 'Reply with OK.', 'Say OK.', 5)
+    secretSet('ai', key)
+    return { connected: true }
+  })
+  ipcMain.handle('ai:suggest', (e, q) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    const c = q || {}
+    return aiSuggest({ name: String(c.name || '').slice(0, 120), messages: c.messages, draft: String(c.draft || '') })
+  })
   ipcMain.handle('jt:status', (e) => (qrAllowed(e) ? jtStatus() : { connected: false }))
   ipcMain.handle('jt:set-key', (e, key) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')
@@ -1474,6 +1494,58 @@ async function tickTimers() {
 }
 const timersState = () => ({ reminders: reminders(), scheduled: scheduled() })
 setInterval(() => tickTimers().catch(() => {}), 20 * 1000)
+
+// ---------------------------------------------------------------- dictation (macOS) + AI reply suggestion
+// Dictation uses the Mac's own Dictation (no extra memory). The AI suggestion asks Claude for a short
+// reply, using an Anthropic API key the user pastes once (stored encrypted).
+function secretGet(slot) {
+  const k = store.state.settings[slot] && store.state.settings[slot].key
+  if (!k) return ''
+  try {
+    return store.state.settings[slot].enc ? safeStorage.decryptString(Buffer.from(k, 'base64')) : Buffer.from(k, 'base64').toString('utf8')
+  } catch {
+    return ''
+  }
+}
+function secretSet(slot, value, extra = {}) {
+  if (!value) {
+    delete store.state.settings[slot]
+  } else {
+    const enc = safeStorage.isEncryptionAvailable()
+    store.state.settings[slot] = { key: (enc ? safeStorage.encryptString(value) : Buffer.from(value, 'utf8')).toString('base64'), enc, ...extra }
+  }
+  store.save()
+}
+const AI_API = process.env.MULTISPACE_TEST_AI_API || 'https://api.anthropic.com/v1/messages'
+const AI_MODEL = 'claude-haiku-5-5'
+async function aiCall(key, system, content, maxTokens = 400) {
+  const res = await net.fetch(AI_API, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({ model: AI_MODEL, max_tokens: maxTokens, system, messages: [{ role: 'user', content }] }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    const msg = (data && data.error && data.error.message) || `HTTP ${res.status}`
+    throw new Error(res.status === 401 ? 'The Claude API key was not accepted. Make a new one at console.anthropic.com and paste it again.' : 'Claude: ' + msg)
+  }
+  return ((data && data.content) || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim()
+}
+async function aiSuggest({ name, messages, draft }) {
+  const key = secretGet('ai')
+  if (!key) throw new Error('NO_KEY')
+  const convo = (Array.isArray(messages) ? messages : []).slice(-25)
+    .map((m) => `${m.fromMe ? 'Me (Master Touch Pools)' : name || 'Customer'}: ${String(m.text || '').slice(0, 1500)}`)
+    .filter((l) => !/:\s*$/.test(l))
+    .join('\n')
+  const system =
+    'You write text-message replies for Master Touch Pools, a pool construction and service company in Florida. ' +
+    "Write the next message from \"Me\". Use the same language as the customer's latest message (English, Portuguese or Spanish). " +
+    'Be friendly, professional and short (1 to 3 sentences), like a real business owner texting. Never invent prices, dates or promises that are not in the conversation. ' +
+    'Do not use placeholders like [name]. Output only the message text.'
+  const content = `Conversation with ${name || 'a customer'}:\n${convo || '(no messages yet)'}\n\n${draft ? `My draft so far (improve it, keep my meaning): ${String(draft).slice(0, 1500)}\n\n` : ''}Write my reply.`
+  return aiCall(key, system, content)
+}
 
 // ---------------------------------------------------------------- quick replies (iMessage + WhatsApp)
 const DEFAULT_QUICK_REPLIES = [
