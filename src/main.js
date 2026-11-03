@@ -1322,6 +1322,37 @@ function registerIpc() {
   })
   ipcMain.handle('unified:list', imsgOnly(() => unifiedList()))
   ipcMain.handle('unified:open', imsgOnly((it) => openUnified(it)))
+  // Reply from the Unread page without opening the chat
+  ipcMain.handle('unified:mark-read', imsgOnly((guid, date) => {
+    const p = (store.state.settings.imsg = store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} })
+    p.readUpTo = p.readUpTo || {}
+    p.readUpTo[String(guid)] = Math.max(Number(date) || 0, p.readUpTo[String(guid)] || 0)
+    if (p.manualUnread) delete p.manualUnread[String(guid)]
+    store.save()
+    for (const rt of runtimes.values()) for (const t of rt.tabs.values()) if (t.url === IMESSAGE_URL && !t.view.webContents.isDestroyed()) t.view.webContents.send('imsg:prefs-changed')
+    return true
+  }))
+  let waReq = 0
+  ipcMain.handle('unified:wa-send', imsgOnly(async (it, text) => {
+    text = String(text || '').trim()
+    if (!text) throw new Error('Write the message first.')
+    const rt = runtimes.get(String(it && it.spaceId))
+    const t = rt && rt.tabs.get(Number(it && it.tabId))
+    if (!t || t.view.webContents.isDestroyed() || hostOf(t.url) !== 'web.whatsapp.com') throw new Error('WhatsApp is not open anymore. Open WhatsApp and try again.')
+    const id = ++waReq
+    const wc = t.view.webContents
+    return new Promise((resolve, reject) => {
+      const done = (e, rid, res) => {
+        if (e.sender !== wc || rid !== id) return
+        clearTimeout(timer)
+        ipcMain.removeListener('wa:send-result', done)
+        res && res.ok ? resolve(true) : reject(new Error((res && res.error) || 'Could not send on WhatsApp.'))
+      }
+      const timer = setTimeout(() => { ipcMain.removeListener('wa:send-result', done); reject(new Error('WhatsApp did not answer. Open the chat and send it there.')) }, 15000)
+      ipcMain.on('wa:send-result', done)
+      wc.send('wa:send-chat', id, String(it.name || ''), text)
+    })
+  }))
   ipcMain.handle('imsg:send-handle', imsgOnly((h, text) => imessage.sendToHandle(String(h), String(text))))
   // Favorites and read/unread marks live in the browser (Messages' own database is read-only).
   ipcMain.handle('imsg:prefs', imsgOnly(() => store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} }))
@@ -2070,7 +2101,7 @@ async function unifiedList() {
         const p = store.state.settings.imsg || {}
         for (const c of await imessage.listChats(120)) {
           if (p.hidden?.[c.guid] >= c.date || !imsgIsUnread(c, p)) continue
-          items.push({ kind: 'imsg', key: 'i:' + c.guid, guid: c.guid, name: c.title || c.handle, preview: c.last, count: c.unread || 0, date: c.date, job: jobLabel(jtLinks()[c.guid]), jobUrl: jtLinks()[c.guid] ? `https://app.jobtread.com/jobs/${jtLinks()[c.guid].jobId}` : '' })
+          items.push({ kind: 'imsg', key: 'i:' + c.guid, guid: c.guid, chatId: c.id, name: c.title || c.handle, preview: c.last, count: c.unread || 0, date: c.date, job: jobLabel(jtLinks()[c.guid]), jobUrl: jtLinks()[c.guid] ? `https://app.jobtread.com/jobs/${jtLinks()[c.guid].jobId}` : '' })
           unreadChats.push(c)
         }
         jtAutoLink(unreadChats).catch(() => {})

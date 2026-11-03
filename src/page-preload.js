@@ -500,6 +500,47 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       await new Promise((r) => setTimeout(r, 500))
     }
   })
+  // Reply typed on the Unread page: open the chat, type the text, press Send.
+  ipcRenderer.on('wa:send-chat', async (_e, rid, name, text) => {
+    const reply = (res) => ipcRenderer.send('wa:send-result', rid, res)
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    const want = String(name || '')
+    const headName = () => {
+      const h = document.querySelector('#main header')
+      const t = h && (h.querySelector('span[title][dir="auto"]') || h.querySelector('span[dir="auto"]') || h.querySelector('span[title]'))
+      return t ? (t.getAttribute('title') || t.textContent || '').trim() : ''
+    }
+    try {
+      if (headName() !== want) {
+        let row = null
+        for (let i = 0; i < 10 && !row; i++) { row = rowsOf().find((r) => nameOf(r) === want); if (!row) await sleep(400) }
+        if (!row) return reply({ ok: false, error: `Could not find "${want}" in your WhatsApp chat list.` })
+        const target = row.querySelector('[tabindex]') || row
+        for (const type of ['mousedown', 'mouseup', 'click']) target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }))
+        for (let i = 0; i < 20 && headName() !== want; i++) await sleep(250)
+        if (headName() !== want) return reply({ ok: false, error: 'WhatsApp did not open that chat. Open it and send from there.' })
+      }
+      let box = null
+      for (let i = 0; i < 20 && !box; i++) { box = document.querySelector('#main footer div[contenteditable="true"]'); if (!box) await sleep(250) }
+      if (!box) return reply({ ok: false, error: 'Could not find the WhatsApp message box.' })
+      box.focus()
+      const sel = window.getSelection()
+      const r = document.createRange()
+      r.selectNodeContents(box)
+      sel.removeAllRanges()
+      sel.addRange(r)
+      if (!document.execCommand('insertText', false, String(text))) box.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: String(text), bubbles: true, cancelable: true }))
+      await sleep(300)
+      const btn = document.querySelector('#main footer button[aria-label="Send"], #main footer button[aria-label="Enviar"], #main footer [data-icon="send"], #main footer [data-icon="wds-ic-send-filled"]')
+      if (btn) (btn.closest('button') || btn).click()
+      else box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }))
+      for (let i = 0; i < 12 && (box.textContent || '').trim(); i++) await sleep(250)
+      if ((box.textContent || '').trim()) return reply({ ok: false, error: 'The text is typed in WhatsApp but was not sent. Open WhatsApp and press Enter.' })
+      reply({ ok: true })
+    } catch (err) {
+      reply({ ok: false, error: String((err && err.message) || err) })
+    }
+  })
 }
 
 // ---------------------------------------------------------------- WhatsApp: quick replies

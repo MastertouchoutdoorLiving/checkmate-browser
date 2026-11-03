@@ -226,3 +226,7 @@ Today's appointments appear in the morning summary and at the top of Tasks. Each
 ## Team setup
 
 Tasks → Settings · Connections → Team setup → **Export…** (or the CheckMate menu → Export Team Setup…) saves your apps, quick replies and message templates in a file. An employee picks **Import…** and chooses the file: apps they don't have yet are added, and quick replies and templates are replaced. Keys and passwords are never in the file, so each person connects their own JobTread, Quo and AI keys.
+
+## Reply from Unread
+
+Click an iMessage or WhatsApp conversation in **Unread** to open a reply box right there, with the last messages, quick replies and ✨ AI suggestions. Enter sends (Shift+Enter for a new line). iMessage replies go out through Messages and the chat is marked read. WhatsApp replies are typed and sent in your open WhatsApp tab. ↗ opens the full chat.

@@ -1585,3 +1585,9 @@ async function jtAct(mode, c, m) {
   }
 }
 $('#jta-cancel').addEventListener('click', () => ($('#jt-act').hidden = true))
+
+// read marks changed elsewhere (e.g. replied from the Unread page)
+window.imsg.onPrefsChanged(async () => {
+  try { prefs = { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {}, team: [], ...(await window.imsg.prefs()) } } catch { return }
+  renderChats()
+})

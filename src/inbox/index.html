@@ -20,6 +20,19 @@
     <div id="notes"></div>
     <div id="list"></div>
   </div>
+  <div id="reply" hidden>
+    <div id="r-hist"></div>
+    <textarea id="r-text" rows="2" placeholder="Write a reply…  (Enter sends, Shift+Enter new line)"></textarea>
+    <div class="r-bar">
+      <select id="r-quick"><option value="">⚡ Quick reply…</option></select>
+      <button type="button" class="r-btn" id="r-ai" hidden>✨ Suggest</button>
+      <span class="msg" id="r-msg"></span>
+      <button type="button" class="r-btn link" id="r-read">Mark read</button>
+      <button type="button" class="r-btn link" id="r-open">Open chat ↗</button>
+      <button type="button" class="r-btn link" id="r-close">Close</button>
+      <button type="button" class="r-btn primary" id="r-send">Send · <span id="r-via">iMessage</span></button>
+    </div>
+  </div>
   <script src="inbox.js"></script>
 </body>
 </html>
