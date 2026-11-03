@@ -309,11 +309,13 @@ function restoreTabs(spaceId) {
   rt.restored = true
   const space = store.getSpace(spaceId)
   const saved = space.tabs || []
+  const active = saved.find((t) => t.active) || saved[0]
   saved.forEach((t) => {
     if (t.appId && !space.apps.find((a) => a.id === t.appId)) return
-    createTab(spaceId, { url: t.url, appId: t.appId, select: false, persist: false })
+    // Memory saver: only the tab you were on (and apps that must stay live) load at startup.
+    const sleep = memorySaverOn() && t !== active && !keepAwakeUrl(normalizeUrl(t.url))
+    createTab(spaceId, { url: t.url, appId: t.appId, select: false, persist: false, sleep })
   })
-  const active = saved.find((t) => t.active)
   const activeTab = active && [...rt.tabs.values()].find((t) => t.url === active.url)
   if (activeTab) rt.activeTabId = activeTab.id
   else if (rt.order.length) rt.activeTabId = rt.order[0]
@@ -337,9 +339,10 @@ function activateSpace(spaceId) {
   store.state.activeSpaceId = spaceId
   store.save()
   restoreTabs(spaceId)
-  layoutViews()
   const rt = runtimes.get(spaceId)
   const tab = rt && rt.tabs.get(rt.activeTabId)
+  wakeTab(tab)
+  layoutViews()
   if (tab && !tab.internal) rt.extensions.selectTab(tab.view.webContents)
   pushState()
 }
@@ -353,7 +356,7 @@ function findTabByWebContents(wc) {
   return null
 }
 
-function createTab(spaceId, { url, appId = null, select = true, persist = true } = {}) {
+function createTab(spaceId, { url, appId = null, select = true, persist = true, sleep = false } = {}) {
   const rt = getRuntime(spaceId)
   const internal = isInternal(normalizeUrl(url))
   const view = new WebContentsView({
@@ -385,6 +388,8 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true }
     badge: 0,
     loading: false,
     internal,
+    sleeping: !!sleep && !internal,
+    lastActive: Date.now(),
   }
   rt.tabs.set(tab.id, tab)
   rt.order.push(tab.id)
@@ -394,6 +399,7 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true }
   view.setVisible(false)
 
   if (internal) view.webContents.loadFile(tab.url === INBOX_URL ? path.join(__dirname, 'inbox', 'index.html') : path.join(__dirname, 'imessage', 'index.html')).catch(() => {})
+  else if (tab.sleeping) {} // loads when you click it
   // Wait until the space's extensions are loaded so content scripts run on the first page.
   else Promise.resolve(rt.ready).finally(() => view.webContents.loadURL(tab.url).catch(() => {}))
 
@@ -412,10 +418,12 @@ function wireTab(tab) {
   }
 
   wc.on('did-start-loading', () => {
+    if (tab.sleeping) return
     tab.loading = true
     pushState()
   })
   wc.on('did-stop-loading', () => {
+    if (tab.sleeping) return
     tab.loading = false
     pushState()
   })
@@ -425,27 +433,32 @@ function wireTab(tab) {
     setTimeout(() => !wc.isDestroyed() && wc.reload(), 1000)
   })
   wc.on('did-navigate', (_e, url) => {
+    if (tab.sleeping) return
     if (tab.internal) return
     tab.url = url
     update()
   })
   wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
+    if (tab.sleeping) return
     if (isMainFrame && !tab.internal) {
       tab.url = url
       update()
     }
   })
   wc.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (tab.sleeping) return
     if (!isMainFrame || code === -3) return // -3 = aborted (normal during redirects)
     tab.title = `Can't reach ${hostOf(url) || 'page'}`
     pushState()
   })
   wc.on('page-title-updated', (_e, title) => {
+    if (tab.sleeping) return
     tab.title = title
     tab.badge = parseBadge(title)
     pushState()
   })
   wc.on('page-favicon-updated', (_e, favicons) => {
+    if (tab.sleeping) return
     tab.favicon = favicons[0] || null
     // Remember the site's real icon for the apps list (Google's icon service misses many web apps).
     if (tab.appId && tab.favicon && !tab.favicon.startsWith('data:') && tab.favicon.length < 500) {
@@ -485,7 +498,10 @@ function parseBadge(title) {
 function selectTab(spaceId, tabId) {
   const rt = runtimes.get(spaceId)
   if (!rt || !rt.tabs.has(tabId)) return
+  const prev = rt.tabs.get(rt.activeTabId)
+  if (prev) prev.lastActive = Date.now()
   rt.activeTabId = tabId
+  wakeTab(rt.tabs.get(tabId))
   if (store.state.activeSpaceId !== spaceId) {
     store.state.activeSpaceId = spaceId
     store.save()
@@ -533,6 +549,45 @@ function activeTab() {
   const rt = runtimes.get(store.state.activeSpaceId)
   return rt ? rt.tabs.get(rt.activeTabId) : null
 }
+
+// ---------------------------------------------------------------- memory saver
+// Apps you haven't looked at for a while are put to sleep (their page is unloaded, freeing memory).
+// Clicking one wakes it up again. WhatsApp, Gmail, Quo and the built-in pages always stay awake,
+// so unread counts and notifications keep working.
+const SLEEP_AFTER_MS = Number(process.env.MULTISPACE_TEST_SLEEP_MS) || 30 * 60 * 1000
+const memorySaverOn = () => store.state.settings.memorySaver !== false
+function keepAwakeUrl(url) {
+  if (isInternal(url)) return true
+  const h = hostOf(url)
+  return h === 'web.whatsapp.com' || h === 'mail.google.com' || /(^|\.)quo\.com$/.test(h) || /(^|\.)openphone\.com$/.test(h)
+}
+function sleepTab(tab) {
+  if (!tab || tab.sleeping || tab.internal || keepAwakeUrl(tab.url)) return
+  const wc = tab.view.webContents
+  if (wc.isDestroyed() || wc.isCurrentlyAudible()) return
+  tab.sleeping = true
+  tab.loading = false
+  wc.loadURL('about:blank').catch(() => {})
+}
+function wakeTab(tab) {
+  if (!tab || !tab.sleeping) return
+  tab.sleeping = false
+  tab.lastActive = Date.now()
+  const rt = runtimes.get(tab.spaceId)
+  Promise.resolve(rt && rt.ready).finally(() => !tab.view.webContents.isDestroyed() && tab.view.webContents.loadURL(tab.url).catch(() => {}))
+}
+setInterval(() => {
+  if (!memorySaverOn()) return
+  const now = Date.now()
+  for (const rt of runtimes.values()) {
+    const showing = rt.spaceId === store.state.activeSpaceId ? rt.activeTabId : null
+    for (const t of rt.tabs.values()) {
+      if (t.id === rt.activeTabId) t.lastActive = rt.spaceId === store.state.activeSpaceId ? now : t.lastActive
+      if (t.id === showing) continue
+      if (now - (t.lastActive || now) > SLEEP_AFTER_MS) sleepTab(t)
+    }
+  }
+}, process.env.MULTISPACE_TEST_SLEEP_MS ? 2000 : 60 * 1000)
 
 // ---------------------------------------------------------------- extension side panel
 const SIDE_PANEL_WIDTH = 420
@@ -1517,6 +1572,15 @@ function buildAppMenu() {
         { label: 'Reload Page', accelerator: 'CmdOrCtrl+R', click: () => activeTab()?.view.webContents.reload() },
         { label: 'Toggle Apps Panel', accelerator: 'CmdOrCtrl+B', click: send('ui:toggle-apps') },
         { label: 'Apps Panel: Icons Only / Full', accelerator: 'CmdOrCtrl+Shift+B', click: send('ui:toggle-compact') },
+        {
+          label: 'Save Memory (sleep apps unused for 30 min)',
+          type: 'checkbox',
+          checked: memorySaverOn(),
+          click: (m) => {
+            store.state.settings.memorySaver = m.checked
+            store.save()
+          },
+        },
         {
           label: 'Developer Tools (page)',
           accelerator: isMac ? 'Alt+Cmd+I' : 'Ctrl+Shift+I',
