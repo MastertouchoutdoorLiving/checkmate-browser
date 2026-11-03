@@ -378,13 +378,15 @@ function fillTemplate(x) {
   const t = (sendCfg.templates || {})[x.kind] || ''
   const first = String(x.customer || '').trim().split(/\s+/)[0] || 'there'
   return t.replace(/\{first\}/g, first).replace(/\{name\}/g, x.customer || '').replace(/\{job\}/g, (x.job && x.job.name) || 'your project')
-    .replace(/\{amount\}/g, money$(x.amount)).replace(/\{number\}/g, x.number || '').replace(/\{days\}/g, x.days)
+    .replace(/\{amount\}/g, money$(x.amount)).replace(/\{number\}/g, x.number || '').replace(/\{days\}/g, x.days).replace(/\{eta\}/g, x.eta || 15)
 }
 let sending = null
 function openSend(x) {
   sending = x
-  $('#sm-title').textContent = x.kind === 'invoice' ? 'Payment reminder' : 'Estimate follow-up'
-  $('#sm-sub').textContent = `${x.customer} · ${x.job ? x.job.name + ' · ' : ''}${money$(x.amount)}`
+  $('#sm-title').textContent = x.kind === 'invoice' ? 'Payment reminder' : x.kind === 'onmyway' ? '🚗 On my way' : 'Estimate follow-up'
+  $('#sm-sub').textContent = x.kind === 'onmyway' ? `${x.customer || 'Customer'}${x.job ? ' · ' + x.job.name : ''} · ${x.when}` : `${x.customer} · ${x.job ? x.job.name + ' · ' : ''}${money$(x.amount)}`
+  $('#sm-eta').hidden = x.kind !== 'onmyway'
+  document.querySelectorAll('#sm-eta .chip').forEach((c) => c.classList.toggle('on', Number(c.dataset.eta) === Number(x.eta || 15)))
   $('#sm-to').value = x.phone || ''
   $('#sm-via').value = sendCfg.via
   $('#sm-via').options[1].textContent = sendCfg.quoConnected ? `Quo · ${sendCfg.quoFromLabel || 'pick a number in Settings'}` : 'Quo (not connected yet)'
@@ -415,7 +417,8 @@ $('#send-form').addEventListener('submit', async (e) => {
   $('#sm-msg').className = 'msg'
   $('#sm-msg').textContent = 'Sending…'
   try {
-    await window.imsg.sendText({ to: $('#sm-to').value, via: $('#sm-via').value, text: $('#sm-text').value, docId: x.id, jobId: x.job && x.job.id })
+    await window.imsg.sendText({ to: $('#sm-to').value, via: $('#sm-via').value, text: $('#sm-text').value, docId: x.kind === 'onmyway' ? '' : x.id, jobId: x.job && x.job.id })
+    if (x.kind === 'onmyway') { sentOmw[x.id] = Date.now(); renderAppts() }
     $('#send-modal').hidden = true
     await loadSend()
     renderSummary()
@@ -438,6 +441,7 @@ function renderSendConn() {
   $('#quo-from').innerHTML = (sendCfg.quoNumbers || []).map((n) => `<option value="${esc(n.id)}" ${n.id === sendCfg.quoFrom ? 'selected' : ''}>${esc(n.label)}</option>`).join('')
   if (document.activeElement !== $('#tpl-estimate')) $('#tpl-estimate').value = sendCfg.templates.estimate || ''
   if (document.activeElement !== $('#tpl-invoice')) $('#tpl-invoice').value = sendCfg.templates.invoice || ''
+  if (document.activeElement !== $('#tpl-onmyway')) $('#tpl-onmyway').value = sendCfg.templates.onmyway || ''
 }
 document.querySelectorAll('input[name="via"]').forEach((r) => r.addEventListener('change', async () => { sendCfg = await window.imsg.setSend({ via: r.value }); renderSendConn() }))
 $('#quo-from').addEventListener('change', async () => { sendCfg = await window.imsg.setSend({ quoFrom: $('#quo-from').value }); renderSendConn() })
@@ -451,7 +455,7 @@ $('#quo-save').addEventListener('click', async () => {
 })
 $('#quo-off').addEventListener('click', async () => { if (!confirm('Disconnect Quo?')) return; sendCfg = await window.imsg.quoSetKey(''); renderSendConn() })
 $('#tpl-save').addEventListener('click', async () => {
-  sendCfg = await window.imsg.setSend({ templates: { estimate: $('#tpl-estimate').value, invoice: $('#tpl-invoice').value } })
+  sendCfg = await window.imsg.setSend({ templates: { estimate: $('#tpl-estimate').value, invoice: $('#tpl-invoice').value, onmyway: $('#tpl-onmyway').value } })
   $('#tpl-msg').textContent = 'Saved ✓'
   setTimeout(() => ($('#tpl-msg').textContent = ''), 2000)
 })
@@ -471,3 +475,88 @@ window.imsg.onSummary(() => loadMoney(true))
 loadSend()
 loadMoney()
 setInterval(() => loadMoney(), 10 * 60e3)
+
+
+// ---- Today's appointments (Google Calendar) with "On my way"
+let cal = { connected: false, events: [] }
+const sentOmw = {}
+const hm = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+const apptWhen = (ev) => (ev.allDay ? 'All day' : hm(ev.start))
+function renderAppts() {
+  const box = $('#appts')
+  if (!cal.connected) { box.innerHTML = '<div class="empty">Connect Google Calendar in Settings · Connections to see today\'s appointments here.</div>'; return }
+  if (cal.error) { box.innerHTML = `<div class="empty">${esc(cal.error)}</div>`; return }
+  if (!cal.events.length) { box.innerHTML = '<div class="empty">No appointments today.</div>'; return }
+  const now = Date.now()
+  box.innerHTML = cal.events.map((ev) => `<div class="card fu appt ${!ev.allDay && ev.end < now ? 'past' : ''}" data-appt="${esc(ev.id)}">
+    <span class="when">${esc(apptWhen(ev))}</span>
+    <div class="body"><div class="t">${esc(ev.title)}</div>
+    <div class="s">${[ev.customer ? `<a data-appt-act="cust">👤 ${esc(ev.customer.name)}</a>` : '', ev.job ? `<a data-appt-act="job">🔨 ${esc(ev.job.name)}</a>` : '', esc(ev.location || (ev.customer || ev.job ? '' : 'Not found in JobTread')), sentOmw[ev.id] ? '✓ on-my-way sent' : ''].filter(Boolean).join(' · ')}</div></div>
+    ${ev.location ? '<button class="btn small" data-appt-act="map" title="Directions in Google Maps">🗺️</button>' : ''}
+    ${ev.allDay ? '' : `<button class="btn small ${ev.phone ? 'primary' : ''}" data-appt-act="omw" title="${ev.phone ? 'Text the customer that you are on the way' : 'No phone found in the appointment or JobTread. You can type it.'}">🚗 On my way</button>`}</div>`).join('')
+}
+async function loadCal(fresh) {
+  try { cal = (await window.imsg.calToday(fresh)) || cal } catch (err) { cal = { connected: true, events: [], error: errText(err) } }
+  renderAppts()
+  renderCalConn()
+  renderSummary()
+}
+function renderCalConn() {
+  $('#cal-state').textContent = cal.connected ? 'Connected' : 'Not connected'
+  $('#cal-state').classList.toggle('on', !!cal.connected)
+  $('#cal-row').hidden = $('#cal-tip').hidden = !!cal.connected
+  $('#cal-off').hidden = !cal.connected
+}
+function openOmw(ev) {
+  openSend({ kind: 'onmyway', id: ev.id, customer: ev.customer ? ev.customer.name : ev.title, job: ev.job, phone: ev.phone, when: apptWhen(ev), eta: 15 })
+}
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest('#sm-eta .chip')
+  if (chip && sending && sending.kind === 'onmyway') { sending.eta = Number(chip.dataset.eta); $('#sm-text').value = fillTemplate(sending); document.querySelectorAll('#sm-eta .chip').forEach((c) => c.classList.toggle('on', c === chip)); return }
+  const sumA = e.target.closest('[data-sum-appt]')
+  if (sumA) { const ev = cal.events.find((x) => x.id === sumA.dataset.sumAppt); if (ev) ev.allDay ? document.querySelector('#appts').scrollIntoView({ behavior: 'smooth' }) : openOmw(ev); return }
+  const b = e.target.closest('[data-appt-act]')
+  if (!b) return
+  const ev = cal.events.find((x) => x.id === b.closest('[data-appt]').dataset.appt)
+  if (!ev) return
+  const act = b.dataset.apptAct
+  if (act === 'omw') openOmw(ev)
+  if (act === 'cust' && ev.customer) window.imsg.jtOpen(ev.customer.url)
+  if (act === 'job' && ev.job) window.imsg.jtOpen(ev.job.url)
+  if (act === 'map') window.imsg.openUrl ? window.imsg.openUrl('https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(ev.location)) : window.open('https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(ev.location))
+})
+$('#cal-refresh').addEventListener('click', () => loadCal(true))
+$('#cal-save').addEventListener('click', async () => {
+  const u = $('#cal-url').value.trim()
+  if (!u) return $('#cal-url').focus()
+  $('#cal-msg').className = 'msg'
+  $('#cal-msg').textContent = 'Checking…'
+  try { await window.imsg.calSetUrl(u); $('#cal-url').value = ''; $('#cal-msg').textContent = 'Connected ✓'; await loadCal(true) } catch (err) { $('#cal-msg').className = 'msg err'; $('#cal-msg').textContent = errText(err) }
+})
+$('#cal-off').addEventListener('click', async () => { if (!confirm('Disconnect Google Calendar?')) return; cal = await window.imsg.calSetUrl(''); $('#cal-msg').textContent = ''; renderAppts(); renderCalConn(); renderSummary() })
+
+// appointments first in the "Today" box
+const _renderSummary2 = renderSummary
+renderSummary = function () {
+  _renderSummary2()
+  if (!cal.connected || !cal.events) return
+  const now = Date.now()
+  const list = cal.events.filter((ev) => ev.allDay || ev.end >= now)
+  const lines = list.slice(0, 5).map((ev) => `<button class="sum-line" data-sum-appt="${esc(ev.id)}">${esc(apptWhen(ev))} · ${esc(ev.title)} <span class="m">${ev.job ? '· 🔨 ' + esc(ev.job.name) : ev.customer ? '· ' + esc(ev.customer.name) : ''}${ev.phone ? ' · 🚗' : ''}</span></button>`)
+  const col = `<div class="sum-col"><h3>Appointments today <span class="n">${list.length}</span></h3>${lines.join('') || '<div class="sum-line"><span class="m">Nothing left today</span></div>'}${list.length > 5 ? `<div class="sum-line"><span class="m">+${list.length - 5} more below</span></div>` : ''}</div>`
+  const grid = document.querySelector('#sum-body .sum-grid')
+  if (grid) grid.insertAdjacentHTML('afterbegin', col)
+}
+window.imsg.onSummary(() => loadCal(true))
+loadCal()
+setInterval(() => loadCal(), 10 * 60e3)
+
+// ---- Team setup
+$('#team-export').addEventListener('click', async () => {
+  $('#team-msg').className = 'msg'
+  try { const r = await window.imsg.teamExport(); if (r) $('#team-msg').textContent = `Saved ✓ ${r.apps} apps, ${r.quickReplies} quick replies → ${r.file}` } catch (err) { $('#team-msg').className = 'msg err'; $('#team-msg').textContent = errText(err) }
+})
+$('#team-import').addEventListener('click', async () => {
+  $('#team-msg').className = 'msg'
+  try { const r = await window.imsg.teamImport(); if (r) { $('#team-msg').textContent = `Imported ✓ ${r.added} apps added, ${r.quickReplies} quick replies`; loadSend() } } catch (err) { $('#team-msg').className = 'msg err'; $('#team-msg').textContent = errText(err) }
+})

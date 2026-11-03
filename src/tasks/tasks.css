@@ -105,3 +105,9 @@ details.tpl { margin-top: 8px; }
 .sheet { width: min(460px, 100%); padding: 18px 20px; }
 .sheet h3 { margin: 0 0 4px; }
 .sm-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.appt .when { font-weight: 650; min-width: 64px; font-size: 13px; white-space: nowrap; }
+.appt .s a, .appt .job { color: var(--accent, #2563eb); cursor: pointer; }
+.appt.past { opacity: .6; }
+.eta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); margin: 2px 0 8px; }
+.chip { border: 1px solid var(--line, #ddd); background: transparent; color: inherit; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.chip.on { background: var(--accent, #2563eb); border-color: var(--accent, #2563eb); color: #fff; }

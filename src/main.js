@@ -23,6 +23,8 @@ const { ElectronChromeExtensions } = require('electron-chrome-extensions')
 const contactParse = require('./imessage/contact-parse.js')
 const jobtread = require('./jobtread.js')
 const quo = require('./quo.js')
+const calendar = require('./calendar.js')
+let teamExportFn = null, teamImportFn = null
 const updater = require('./updater.js')
 const {
   installChromeWebStore,
@@ -984,6 +986,7 @@ function registerIpc() {
   const DEFAULT_TEMPLATES = {
     estimate: 'Hi {first}, this is Nilson from Master Touch Pools. Just checking in on the {job} proposal we sent. Any questions I can answer?',
     invoice: 'Hi {first}, this is Master Touch Pools. A friendly reminder that invoice #{number} for {job} has a balance of {amount}. Please let us know if you have any questions. Thank you!',
+    onmyway: 'Hi {first}, this is Nilson from Master Touch Pools. I am on my way and should be there in about {eta} minutes.',
   }
   const sendSettings = () => {
     const q = store.state.settings.quoCfg || {}
@@ -999,7 +1002,7 @@ function registerIpc() {
       cfg.from = p.quoFrom
       cfg.label = n ? n.label : ''
     }
-    if (p.templates) store.state.settings.templates = { estimate: String(p.templates.estimate || '').slice(0, 1500), invoice: String(p.templates.invoice || '').slice(0, 1500) }
+    if (p.templates) { const t = { ...(store.state.settings.templates || {}) }; for (const k of Object.keys(DEFAULT_TEMPLATES)) if (typeof p.templates[k] === 'string') t[k] = p.templates[k].slice(0, 1500); store.state.settings.templates = t }
     store.save()
     return sendSettings()
   })
@@ -1048,6 +1051,146 @@ function registerIpc() {
     store.save()
     return true
   })
+  // ---- Today's appointments (Google Calendar secret iCal address), linked to JobTread customers
+  let calCache = null
+  const custCache = new Map()
+  async function linkEvent(key, ev) {
+    const text = [ev.title, ev.location, ev.description].join('\n')
+    const phone = (text.match(/(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/) || [])[0] || ''
+    const email = (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [])[0] || ''
+    const ck = phone + '|' + email + '|' + ev.title + '|' + ev.location
+    if (custCache.has(ck) && Date.now() - custCache.get(ck).at < 6 * 3600e3) return custCache.get(ck).v
+    let v = null
+    try {
+      let c = phone || email ? await jobtread.findCustomer(key, { phone, email }) : null
+      // no phone or e-mail in the event: try the street address, then each part of the title
+      let job = null
+      if (!c && ev.location) {
+        const street = ev.location.split(',')[0].trim()
+        if (street.length >= 5) job = (await jobtread.searchJobs(key, street))[0] || null
+      }
+      if (!c && !job) {
+        for (const part of String(ev.title).split(/\s[-–|:·]\s|[-–|:·]\s|,\s/).map((s) => s.trim()).filter((s) => s.length >= 4 && /[a-z]/i.test(s)).slice(0, 3)) {
+          c = await jobtread.findCustomer(key, { name: part }).catch(() => null)
+          if (c) break
+        }
+      }
+      if (c) {
+        const open = (c.jobs || []).filter((j) => !j.closed)
+        job = job || open[0] || (c.jobs || [])[0] || null
+        v = { customer: { id: c.id, name: c.name, url: c.url }, phone: phone || c.phone || '', job: job ? { id: job.id, name: job.name, url: job.url || `https://app.jobtread.com/jobs/${job.id}` } : null }
+      } else if (job) {
+        v = { customer: job.accountId ? { id: job.accountId, name: job.customer, url: `https://app.jobtread.com/customers/${job.accountId}` } : null, phone, job: { id: job.id, name: job.name, url: job.url } }
+        if (job.accountId && !phone) {
+          const c2 = await jobtread.findCustomer(key, { name: job.customer }).catch(() => null)
+          if (c2) v.phone = c2.phone || ''
+        }
+      } else if (phone) v = { customer: null, phone, job: null }
+    } catch {}
+    custCache.set(ck, { at: Date.now(), v })
+    return v
+  }
+  ipcMain.handle('cal:today', async (e, fresh) => {
+    if (!isInternalSender(e)) return null
+    const url = secretGet('cal')
+    if (!url) return { connected: false, events: [] }
+    const day = new Date().toDateString()
+    if (!fresh && calCache && calCache.url === url && calCache.day === day && Date.now() - calCache.at < 5 * 60e3) return calCache.data
+    const events = await calendar.today(url)
+    const key = jtKey()
+    if (key) {
+      const queue = [...events]
+      await Promise.all([0, 1, 2].map(async () => { while (queue.length) { const ev = queue.shift(); Object.assign(ev, await linkEvent(key, ev) || {}) } }))
+    }
+    const data = { connected: true, events }
+    calCache = { url, day, at: Date.now(), data }
+    return data
+  })
+  ipcMain.handle('cal:set-url', async (e, url) => {
+    if (!isInternalSender(e)) throw new Error('Not allowed')
+    url = String(url || '').trim().replace(/^webcal:/i, 'https:')
+    calCache = null
+    if (!url) { secretSet('cal', ''); return { connected: false, events: [] } }
+    await calendar.today(url) // checks the address works
+    secretSet('cal', url)
+    return { connected: true }
+  })
+
+  // ---- Team setup: quick replies, message templates and apps in one file (never keys or passwords)
+  const cleanApp = (a) => ({ name: String(a.name || '').slice(0, 80), url: String(a.url || ''), subtitle: String(a.subtitle || '').slice(0, 120), ...(typeof a.icon === 'string' && a.icon.length < 300000 ? { icon: a.icon } : {}) })
+  const okAppUrl = (u) => /^(https?:\/\/|internal:)/i.test(u)
+  async function teamExport() {
+    const data = {
+      kind: 'checkmate-team-setup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      spaces: store.state.spaces.map((s) => ({ name: s.name, color: s.color, apps: s.apps.map(cleanApp).filter((a) => okAppUrl(a.url)) })),
+      quickReplies: quickReplies(),
+      templates: { ...DEFAULT_TEMPLATES, ...(store.state.settings.templates || {}) },
+    }
+    const { canceled, filePath } = process.env.MULTISPACE_TEST_TEAMFILE ? { filePath: process.env.MULTISPACE_TEST_TEAMFILE } : await dialog.showSaveDialog(win, {
+      title: 'Export team setup',
+      defaultPath: path.join(app.getPath('desktop'), 'CheckMate Team Setup.json'),
+      filters: [{ name: 'CheckMate team setup', extensions: ['json'] }],
+    })
+    if (canceled || !filePath) return null
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2))
+    const apps = data.spaces.reduce((n, s) => n + s.apps.length, 0)
+    return { file: filePath, apps, quickReplies: data.quickReplies.length }
+  }
+  async function teamImport(file) {
+    if (!file && process.env.MULTISPACE_TEST_TEAMFILE) file = process.env.MULTISPACE_TEST_TEAMFILE
+    if (!file) {
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, { title: 'Import team setup', properties: ['openFile'], filters: [{ name: 'CheckMate team setup', extensions: ['json'] }] })
+      if (canceled || !filePaths[0]) return null
+      file = filePaths[0]
+    }
+    let data
+    try { data = JSON.parse(fs.readFileSync(file, 'utf8')) } catch { throw new Error('That file could not be read.') }
+    if (!data || data.kind !== 'checkmate-team-setup') throw new Error('That is not a CheckMate team setup file.')
+    const spaces = (Array.isArray(data.spaces) ? data.spaces : []).slice(0, 30)
+    const qr = Array.isArray(data.quickReplies) ? data.quickReplies : []
+    const appCount = spaces.reduce((n, s) => n + (Array.isArray(s.apps) ? s.apps.length : 0), 0)
+    if (!process.env.MULTISPACE_TEST_AUTOCONFIRM) {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'question',
+        buttons: ['Import', 'Cancel'],
+        defaultId: 0,
+        cancelId: 1,
+        message: 'Import this team setup?',
+        detail: `${appCount} apps in ${spaces.length} space(s) are added (apps you already have are skipped).\n${qr.length} quick replies and the message templates replace yours.\n\nNo keys or passwords are in this file. Each person connects their own JobTread, Quo and AI keys.`,
+      })
+      if (response !== 0) return null
+    }
+    let added = 0
+    for (const s of spaces) {
+      const name = String(s.name || 'Space').slice(0, 60)
+      let sp = store.state.spaces.find((x) => x.name.toLowerCase() === name.toLowerCase())
+      if (!sp) sp = store.addSpace({ name, color: typeof s.color === 'string' ? s.color : undefined })
+      for (const a of (Array.isArray(s.apps) ? s.apps : []).slice(0, 60).map(cleanApp)) {
+        if (!okAppUrl(a.url) || !a.name) continue
+        if (sp.apps.some((x) => x.url.replace(/\/+$/, '') === a.url.replace(/\/+$/, ''))) continue
+        store.addApp(sp.id, a)
+        added++
+      }
+    }
+    if (qr.length) {
+      store.state.settings.quickReplies = qr.slice(0, 60).map((q) => ({ title: String(q?.title || '').trim().slice(0, 60), text: String(q?.text || '').slice(0, 2000) })).filter((q) => q.text.trim())
+      notifyQuickReplies()
+    }
+    if (data.templates && typeof data.templates === 'object') {
+      const t = {}
+      for (const k of Object.keys(DEFAULT_TEMPLATES)) if (typeof data.templates[k] === 'string' && data.templates[k].trim()) t[k] = data.templates[k].slice(0, 1500)
+      store.state.settings.templates = t
+    }
+    store.save()
+    pushState()
+    return { added, quickReplies: qr.length }
+  }
+  teamExportFn = teamExport
+  teamImportFn = teamImport
+  ipcMain.handle('team:export', (e) => { if (!isInternalSender(e)) throw new Error('Not allowed'); return teamExport() })
+  ipcMain.handle('team:import', (e) => { if (!isInternalSender(e)) throw new Error('Not allowed'); return teamImport() })
   let moneyCache = null
   ipcMain.handle('jt:money', async (e, fresh) => {
     if (!qrAllowed(e)) return null
@@ -2070,6 +2213,8 @@ function buildAppMenu() {
               { label: 'Settings: JobTread & AI Keys…', accelerator: 'CmdOrCtrl+,', click: showConnections },
               { label: 'Search JobTread…', accelerator: 'CmdOrCtrl+K', click: () => showTasksAnd('tasks:search') },
               { label: 'Morning Summary', click: () => showTasksAnd('tasks:summary') },
+              { label: 'Export Team Setup…', click: () => teamExportFn && teamExportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup saved', detail: `${r.apps} apps and ${r.quickReplies} quick replies were saved to:\n${r.file}\n\nSend this file to your team. No keys or passwords are in it.` })).catch((err) => dialog.showErrorBox('Export failed', err.message)) },
+              { label: 'Import Team Setup…', click: () => teamImportFn && teamImportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup imported', detail: `${r.added} apps added and ${r.quickReplies} quick replies imported.` })).catch((err) => dialog.showErrorBox('Import failed', err.message)) },
               {
                 label: 'Show Morning Summary When I Start',
                 type: 'checkbox',

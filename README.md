@@ -216,3 +216,13 @@ In **Tasks → Follow-ups** (and in the morning "Today" box):
 Click **💬 Text**, check the message, pick **iMessage** or **Quo**, and send. A note goes on the JobTread job, and the item hides for a week. × hides it without sending.
 
 Each computer picks how it sends texts in **Settings · Connections → Send texts with** (iMessage or Quo). For Quo, paste a Quo API key (Quo → Settings → API → Generate API key, owner or admin) and pick the number to send from. The message templates can be edited there too.
+
+## Today's appointments and "On my way"
+
+Connect Google Calendar in Tasks → Settings · Connections. In Google Calendar open Settings, click your calendar, then **Integrate calendar** and copy the **Secret address in iCal format**. No Google sign-in is needed, and the address is stored encrypted on this computer.
+
+Today's appointments appear in the morning summary and at the top of Tasks. Each one is matched to the JobTread customer and job by the phone or e-mail in the event, the street address, or the customer's name in the title. **🚗 On my way** texts the customer by iMessage or Quo with an arrival time (10 minutes to 1 hour) and adds a note to the job. The text is a template you can edit.
+
+## Team setup
+
+Tasks → Settings · Connections → Team setup → **Export…** (or the CheckMate menu → Export Team Setup…) saves your apps, quick replies and message templates in a file. An employee picks **Import…** and chooses the file: apps they don't have yet are added, and quick replies and templates are replaced. Keys and passwords are never in the file, so each person connects their own JobTread, Quo and AI keys.

@@ -39,6 +39,8 @@
 
     <div id="cols">
       <section class="col">
+        <h2>Today's appointments <button id="cal-refresh" class="link" title="Refresh">↻</button></h2>
+        <div id="appts"><div class="empty">Loading…</div></div>
         <h2>To-dos</h2>
         <div id="todos"></div>
         <button id="show-done" class="link" hidden></button>
@@ -72,11 +74,19 @@
           <button type="button" class="link" id="quo-off" hidden>Disconnect Quo</button>
           <div class="msg" id="quo-msg"></div>
           <details class="tpl"><summary class="link">Message templates</summary>
-            <p class="tip">You can use {first}, {name}, {job}, {amount}, {number} and {days}.</p>
+            <p class="tip">You can use {first}, {name}, {job}, {amount}, {number}, {days} and {eta}.</p>
             <label class="field">Estimate follow-up<textarea id="tpl-estimate" rows="3"></textarea></label>
             <label class="field">Payment reminder<textarea id="tpl-invoice" rows="3"></textarea></label>
+            <label class="field">On my way ({eta} = minutes)<textarea id="tpl-onmyway" rows="3"></textarea></label>
             <button type="button" class="btn small" id="tpl-save">Save templates</button> <span class="msg" id="tpl-msg"></span>
           </details>
+        </div>
+        <div class="card conn">
+          <div class="conn-top"><b>Google Calendar</b><span id="cal-state" class="pill"></span></div>
+          <p class="tip" id="cal-tip">In Google Calendar open Settings → click your calendar on the left → Integrate calendar → copy the <b>Secret address in iCal format</b> and paste it here.</p>
+          <div class="row" id="cal-row"><input id="cal-url" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" autocomplete="off" /><button type="button" class="btn" data-paste="#cal-url">Paste</button><button type="button" class="btn primary" id="cal-save">Connect</button></div>
+          <button type="button" class="link" id="cal-off" hidden>Disconnect calendar</button>
+          <div class="msg" id="cal-msg"></div>
         </div>
         <div class="card conn">
           <div class="conn-top"><b>AI reply suggestions</b><span id="ai-state" class="pill"></span></div>
@@ -84,6 +94,12 @@
           <div class="row" id="ai-row"><input id="ai-key" placeholder="sk-ant-…" autocomplete="off" /><button type="button" class="btn" data-paste="#ai-key">Paste</button><button type="button" class="btn primary" id="ai-save">Save</button></div>
           <button type="button" class="link" id="ai-off" hidden>Remove key</button>
           <div class="msg" id="ai-msg"></div>
+        </div>
+        <div class="card conn">
+          <div class="conn-top"><b>Team setup</b></div>
+          <p class="tip">Save your apps, quick replies and message templates in a file. Your employee opens Import and picks the file. Keys and passwords are never in the file.</p>
+          <div class="row"><button type="button" class="btn" id="team-export">Export…</button><button type="button" class="btn" id="team-import">Import…</button></div>
+          <div class="msg" id="team-msg"></div>
         </div>
       </aside>
     </div>
@@ -94,6 +110,7 @@
       <p class="tip" id="sm-sub"></p>
       <label class="field">To<input id="sm-to" autocomplete="off" /></label>
       <label class="field">Send with<select id="sm-via"><option value="imessage">iMessage (this Mac)</option><option value="quo">Quo</option></select></label>
+      <div class="eta-row" id="sm-eta" hidden>Arriving in <button type="button" class="chip" data-eta="10">10 min</button><button type="button" class="chip" data-eta="15">15 min</button><button type="button" class="chip" data-eta="20">20 min</button><button type="button" class="chip" data-eta="30">30 min</button><button type="button" class="chip" data-eta="45">45 min</button><button type="button" class="chip" data-eta="60">1 hour</button></div>
       <label class="field">Message<textarea id="sm-text" rows="5"></textarea></label>
       <div class="msg" id="sm-msg"></div>
       <div class="sm-acts"><button type="button" class="btn" id="sm-cancel">Cancel</button><button type="submit" class="btn primary" id="sm-send">Send</button></div>
