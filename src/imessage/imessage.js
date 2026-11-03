@@ -573,10 +573,12 @@ async function pasteFromBrowser() {
   return false
 }
 let lastPasteAt = 0
+const isOtherField = (el) => el && el.id !== 'text' && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)
 document.addEventListener('paste', async (e) => {
   lastPasteAt = Date.now()
   if (!current || !e.clipboardData) return
   if (e.target.closest && e.target.closest('.sheet')) return // forms paste normally
+  if (isOtherField(e.target)) return // any other box (API key, search, quick replies…) pastes normally
   const dt = e.clipboardData
   let files = [...dt.files]
   if (!files.length) files = [...dt.items].filter((it) => it.kind === 'file').map((it) => it.getAsFile()).filter(Boolean)
@@ -600,6 +602,7 @@ document.addEventListener('paste', async (e) => {
 document.addEventListener('keydown', (e) => {
   if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'v' || e.shiftKey || e.altKey || !current) return
   if (e.target.closest && e.target.closest('.sheet')) return
+  if (isOtherField(e.target)) return
   const at = Date.now()
   setTimeout(() => lastPasteAt < at && pasteFromBrowser(), 250)
 })
