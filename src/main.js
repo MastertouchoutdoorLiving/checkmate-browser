@@ -1492,7 +1492,26 @@ function showTasks() {
     const a = sp.apps.find((x) => x.url === TASKS_URL)
     if (a) return openApp(sp.id, a.id)
   }
+  // Removed it from the sidebar? Put it back.
+  const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]
+  if (!sp) return
+  const a = store.addApp(sp.id, CATALOG.find((x) => x.url === TASKS_URL))
+  store.save()
+  pushState()
+  openApp(sp.id, a.id)
 }
+// Settings: the JobTread and AI keys live in the Tasks app, under Connections.
+function showConnections() {
+  showTasks()
+  for (const rt of runtimes.values())
+    for (const t of rt.tabs.values())
+      if (t.url === TASKS_URL) {
+        const send = () => t.view.webContents.send('tasks:show-conn')
+        if (t.view.webContents.isLoading()) t.view.webContents.once('did-finish-load', () => setTimeout(send, 300))
+        else send()
+      }
+}
+ipcMain.handle('settings:open', (e) => { if (qrAllowed(e)) showConnections() })
 function fireTodo(t) {
   playAlertSound()
   if (!Notification.isSupported()) return
@@ -1798,6 +1817,7 @@ function buildAppMenu() {
             submenu: [
               { role: 'about', label: `About ${DISPLAY_NAME}` },
               { label: 'Check for Updates…', click: () => updater.check({ manual: true }) },
+              { label: 'Settings: JobTread & AI Keys…', accelerator: 'CmdOrCtrl+,', click: showConnections },
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },

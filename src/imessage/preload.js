@@ -26,6 +26,8 @@ contextBridge.exposeInMainWorld('imsg', {
   updateTodo: (id, patch) => ipcRenderer.invoke('todos:update', id, patch),
   deleteTodo: (id) => ipcRenderer.invoke('todos:delete', id),
   onTodos: (fn) => ipcRenderer.on('todos:changed', (e, t) => fn(t)),
+  onShowConnections: (fn) => ipcRenderer.on('tasks:show-conn', () => fn()),
+  openSettings: () => ipcRenderer.invoke('settings:open'),
   openReminder: (id) => ipcRenderer.invoke('timers:open', id),
   onTimers: (fn) => ipcRenderer.on('timers:changed', (e, t) => fn(t)),
   jtFind: (q) => ipcRenderer.invoke('jt:find', q),

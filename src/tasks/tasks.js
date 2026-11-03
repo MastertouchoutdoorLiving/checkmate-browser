@@ -174,6 +174,13 @@ $('#ai-key').addEventListener('keydown', (e) => e.key === 'Enter' && $('#ai-save
 $('#jt-off').addEventListener('click', () => confirm('Disconnect JobTread?') && save('jt', ''))
 $('#ai-off').addEventListener('click', () => confirm('Remove the AI key?') && save('ai', ''))
 
+window.imsg.onShowConnections(() => {
+  const c = document.querySelector('#conn')
+  c.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  c.classList.add('flash')
+  setTimeout(() => c.classList.remove('flash'), 1600)
+  renderConn().then(() => { const k = !$('#jt-row').hidden ? $('#jt-key') : !$('#ai-row').hidden ? $('#ai-key') : null; if (k) k.focus() })
+})
 window.imsg.onTodos((t) => { todos = t; render() })
 window.imsg.onTimers((t) => { timers = t; render() })
 window.addEventListener('focus', () => { refresh(); renderConn() })

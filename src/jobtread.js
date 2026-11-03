@@ -24,25 +24,35 @@ async function pave(grantKey, query) {
   return data
 }
 
-async function whoAmI(grantKey) {
-  const d = await pave(grantKey, { currentGrant: { organization: { id: {}, name: {} } } })
-  const org = d.currentGrant && d.currentGrant.organization
-  if (!org || !org.id) throw new Error('This grant key has no JobTread company.')
+// The company a grant key belongs to. Some keys are tied to the user rather than one company:
+// then use the user's company (the first one, if they belong to several).
+const ORG_CACHE = new Map()
+async function orgOf(grantKey) {
+  if (ORG_CACHE.has(grantKey)) return ORG_CACHE.get(grantKey)
+  const d = await pave(grantKey, {
+    currentGrant: { id: {}, organization: { id: {}, name: {} }, user: { memberships: { nodes: { organization: { id: {}, name: {} } } } } },
+  })
+  const g = d.currentGrant
+  if (!g) throw new Error('JobTread did not accept this key. Copy the whole key again (it is long) and paste it with the Paste button.')
+  const mem = ((g.user && g.user.memberships && g.user.memberships.nodes) || []).map((m) => m.organization).filter((o) => o && o.id)
+  const org = (g.organization && g.organization.id && g.organization) || mem[0]
+  if (!org) throw new Error('This key is not linked to a JobTread company. In JobTread, open app.jobtread.com/grants while signed in to your company and make a new key.')
+  ORG_CACHE.set(grantKey, org)
   return org
+}
+async function whoAmI(grantKey) {
+  return orgOf(grantKey)
+}
+async function customFields(grantKey, orgId) {
+  const d = await pave(grantKey, {
+    organization: { $: { id: orgId }, customFields: { $: { size: 100, where: ['targetType', 'customerContact'] }, nodes: { id: {}, name: {}, type: {} } } },
+  })
+  return (d.organization && d.organization.customFields && d.organization.customFields.nodes) || []
 }
 
 async function addCustomer(grantKey, c) {
-  const d = await pave(grantKey, {
-    currentGrant: {
-      organization: {
-        id: {},
-        customFields: { $: { size: 100, where: ['targetType', 'customerContact'] }, nodes: { id: {}, name: {}, type: {} } },
-      },
-    },
-  })
-  const org = d.currentGrant && d.currentGrant.organization
-  if (!org || !org.id) throw new Error('This grant key has no JobTread company.')
-  const fields = (org.customFields && org.customFields.nodes) || []
+  const org = await orgOf(grantKey)
+  const fields = await customFields(grantKey, org.id)
   const emailF = fields.find((f) => f.type === 'emailAddress')
   const phoneF = fields.find((f) => f.type === 'phoneNumber')
   const notesF = fields.find((f) => /note/i.test(f.name) && f.type === 'text')
@@ -95,11 +105,8 @@ function e164(phone) {
 let orgCache = null
 async function org(grantKey) {
   if (orgCache && orgCache.key === grantKey && Date.now() - orgCache.at < 3600e3) return orgCache.org
-  const d = await pave(grantKey, {
-    currentGrant: { organization: { id: {}, customFields: { $: { size: 100, where: ['targetType', 'customerContact'] }, nodes: { id: {}, name: {}, type: {} } } } },
-  })
-  const o = d.currentGrant && d.currentGrant.organization
-  if (!o || !o.id) throw new Error('This grant key has no JobTread company.')
+  const base = await orgOf(grantKey)
+  const o = { ...base, customFields: { nodes: await customFields(grantKey, base.id) } }
   orgCache = { key: grantKey, at: Date.now(), org: o }
   return o
 }

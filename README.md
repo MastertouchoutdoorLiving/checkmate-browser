@@ -176,4 +176,4 @@ The **Tasks** app (blue checklist icon, under Unread) is your dashboard:
 - **To-dos**: type one, pick when it's due (or leave it for anytime), press Add. Due to-dos beep and show a notification. Click the circle to mark one done.
 - **Reply reminders**: every ⏰ Remind me you set in iMessage or WhatsApp. Click Open to jump to the chat.
 - **Scheduled messages**: every iMessage you set to Send later. Click × to cancel one.
-- **Connections**: paste your JobTread grant key and your Claude API key here (use the Paste button).
+- **Settings · Connections** (also menu CheckMate Browser → Settings: JobTread & AI Keys…, or Cmd+,): paste your JobTread grant key and your Claude API key here (use the Paste button).
