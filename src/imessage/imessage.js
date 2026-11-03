@@ -431,6 +431,8 @@ $('#messages').addEventListener('click', (e) => {
   if (f) window.imsg.revealAttachment(Number(f.dataset.reveal))
 })
 $('#lightbox').addEventListener('click', (e) => {
+  if (e.target.id === 'lightbox-save') return savePic(Number($('#lightbox').dataset.att))
+  if (e.target.id === 'lightbox-copy') return copyPic(Number($('#lightbox').dataset.att))
   if (e.target.id === 'lightbox-reveal') return window.imsg.revealAttachment(Number($('#lightbox').dataset.att))
   if (e.target.id === 'lightbox-jt') return jtPhoto(Number($('#lightbox').dataset.att))
   $('#lightbox').hidden = true
@@ -933,6 +935,25 @@ $('#messages').addEventListener('contextmenu', (e) => {
   const row = e.target.closest('.row[data-mid]')
   const c = currentChat()
   if (!row || !c || String(window.getSelection() || '').trim()) return // keep the normal copy menu when text is selected
+  const pic = e.target.closest('img[data-att]')
+  if (pic) {
+    e.preventDefault()
+    const id = Number(pic.dataset.att)
+    const menu = $('#ctx')
+    menu.innerHTML = `<button data-a="save">⬇︎ Save picture…</button><button data-a="copy">Copy picture</button>${jt.connected ? '<button data-a="jt">🔨 Send to JobTread</button>' : ''}<button data-a="finder">Show in Finder</button>`
+    menu.style.left = Math.min(e.clientX, innerWidth - 220) + 'px'
+    menu.style.top = Math.min(e.clientY, innerHeight - 160) + 'px'
+    menu.hidden = false
+    menu.onclick = (ev) => {
+      const a = ev.target.closest('button')?.dataset.a
+      menu.hidden = true
+      if (a === 'save') savePic(id)
+      if (a === 'copy') copyPic(id)
+      if (a === 'jt') jtPhoto(id)
+      if (a === 'finder') window.imsg.revealAttachment(id)
+    }
+    return
+  }
   const m = curMsgs.find((x) => String(x.id) === row.dataset.mid)
   if (!m) return
   e.preventDefault()
@@ -1435,17 +1456,21 @@ const linkFromJob = (d, j, extra = {}) => ({ jobId: j.id, jobName: j.name, jobNu
 function drawJobChip(c, L, d) {
   const b = $('#chat-job')
   if (currentChat()?.guid !== c.guid) return
-  b.classList.remove('pick')
+  b.classList.remove('pick', 'none')
+  b.hidden = false
+  const yes = '<span class="jt-yes">✓ JobTread</span>'
   if (L) {
-    b.hidden = false
-    b.innerHTML = `🔨 ${esc(jobText(L))}${L.status ? ` <span class="st">· ${esc(L.status)}</span>` : ''}${L.autoPhotos ? ' 📷' : ''} ▾`
-    b.title = 'JobTread job for this conversation'
-  } else if (d && d.jobs.length) {
-    b.hidden = false
-    b.classList.add('pick')
-    b.textContent = '🔨 Pick JobTread job ▾'
-    b.title = `${d.name} has ${d.jobs.length} jobs. Pick the one this conversation is about.`
-  } else b.hidden = true
+    b.dataset.url = `https://app.jobtread.com/jobs/${L.jobId}`
+    b.innerHTML = `<span class="jt-open" title="Open the job in JobTread">${yes} 🔨 ${esc(jobText(L))}${L.status ? ` <span class="st">· ${esc(L.status)}</span>` : ''}${L.autoPhotos ? ' 📷' : ''} ↗</span><span class="jt-more" title="Job options">▾</span>`
+  } else if (d) {
+    b.dataset.url = d.url || ''
+    if (d.jobs.length) b.classList.add('pick')
+    b.innerHTML = `<span class="jt-open" title="Open the customer in JobTread">${yes} 👤 ${esc(d.name)} ↗</span><span class="jt-more" title="${d.jobs.length ? `Pick which of the ${d.jobs.length} jobs this conversation is about` : 'Options'}">${d.jobs.length ? 'Pick job ▾' : '▾'}</span>`
+  } else {
+    b.dataset.url = ''
+    b.classList.add('none')
+    b.innerHTML = '<span class="jt-more" title="This number is not in JobTread">JobTread: no match ▾</span>'
+  }
 }
 async function jtHeader(c) {
   const b = $('#chat-job')
@@ -1470,6 +1495,7 @@ $('#chat-job').addEventListener('click', async (e) => {
   e.stopPropagation()
   const c = currentChat()
   if (!c) return
+  if (e.target.closest('.jt-open') && $('#chat-job').dataset.url) { closeJtMenu(); return window.imsg.jtOpen($('#chat-job').dataset.url) }
   const menu = $('#jt-menu')
   if (!menu.hidden) return closeJtMenu()
   const r = $('#chat-job').getBoundingClientRect()
@@ -1591,3 +1617,10 @@ window.imsg.onPrefsChanged(async () => {
   try { prefs = { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {}, team: [], ...(await window.imsg.prefs()) } } catch { return }
   renderChats()
 })
+
+async function savePic(id) {
+  try { const r = await window.imsg.saveAttachment(id, 'save'); if (r && r.file) toast('Saved to ' + r.file.replace(/^.*\/(Downloads|Desktop|Documents|Pictures)\//, '$1/')) } catch (err) { toast('Could not save: ' + errMsg(err)) }
+}
+async function copyPic(id) {
+  try { await window.imsg.saveAttachment(id, 'copy'); toast('Picture copied. Paste it anywhere (Cmd+V).') } catch (err) { toast('Could not copy: ' + errMsg(err)) }
+}

@@ -15,6 +15,7 @@ const {
   nativeImage,
   Notification,
   safeStorage,
+  ClipboardItem,
 } = require('electron')
 const { pathToFileURL, fileURLToPath } = require('url')
 const path = require('path')
@@ -1384,7 +1385,7 @@ function registerIpc() {
     if (!from || !from.internal) return false
     const digits = String(phone || '').replace(/\D/g, '')
     const msg = String(text || '').slice(0, 4000)
-    if (!digits) clipboard.writeText(msg)
+    if (!digits) clipWriteText(msg)
     const url = digits ? `https://web.whatsapp.com/send?phone=${digits}&text=${encodeURIComponent(msg)}` : 'https://web.whatsapp.com/'
     const isWa = (u) => /^https:\/\/web\.whatsapp\.com\//.test(u || '')
     const spaces = [from.spaceId, ...store.state.spaces.map((x) => x.id).filter((id) => id !== from.spaceId)]
@@ -1415,6 +1416,28 @@ function registerIpc() {
     try {
       shell.showItemInFolder(await imessage.attachmentPath(id))
     } catch {}
+  })
+  // Save or copy a photo/file from a message
+  ipcMain.handle('imsg:save-attachment', async (e, id, mode) => {
+    if (!findTabByWebContents(e.sender)?.internal) throw new Error('Not allowed')
+    const a = await imessage.attachmentFile(Number(id))
+    const src = a.file || a.path
+    if (mode === 'copy') {
+      const img = nativeImage.createFromPath(src)
+      if (img.isEmpty()) throw new Error('This file can not be copied as a picture.')
+      await clipboard.write([new ClipboardItem({ 'image/png': new Blob([img.toPNG()], { type: 'image/png' }) })])
+      return { copied: true }
+    }
+    let orig = ''
+    try { orig = path.basename(await imessage.attachmentPath(Number(id))) } catch {}
+    let name = (orig || path.basename(src)).replace(/[\/:*?"<>|]/g, '_')
+    if (path.extname(src).toLowerCase() === '.jpg' && !/\.jpe?g$/i.test(name)) name = name.replace(/\.[^.]+$/, '') + '.jpg'
+    const { canceled, filePath } = process.env.MULTISPACE_TEST_SAVEDIR
+      ? { filePath: path.join(process.env.MULTISPACE_TEST_SAVEDIR, name) }
+      : await dialog.showSaveDialog(win, { title: 'Save picture', defaultPath: path.join(app.getPath('downloads'), name) })
+    if (canceled || !filePath) return null
+    fs.copyFileSync(src, filePath)
+    return { file: filePath }
   })
   ipcMain.on('imsg:open-messages', (e, handle) => {
     if (!findTabByWebContents(e.sender)?.internal) return
@@ -1701,7 +1724,7 @@ function showContextMenu(tab, params) {
           .filter((s) => s.id !== tab.spaceId)
           .map((s) => ({ label: s.name, click: () => (activateSpace(s.id), createTab(s.id, { url: params.linkURL })) })),
       },
-      { label: 'Copy link address', click: () => clipboard.writeText(params.linkURL) },
+      { label: 'Copy link address', click: () => clipWriteText(params.linkURL) },
       { type: 'separator' }
     )
   }
@@ -1743,6 +1766,10 @@ function showContextMenu(tab, params) {
 }
 
 const CLIP_MIME = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif', tif: 'image/tiff', tiff: 'image/tiff', mov: 'video/quicktime', mp4: 'video/mp4', m4v: 'video/mp4', pdf: 'application/pdf', mp3: 'audio/mpeg', m4a: 'audio/mp4' }
+// Electron's clipboard is the async ClipboardItem API (no writeText/writeImage).
+function clipWriteText(text) {
+  return clipboard.write([new ClipboardItem({ 'text/plain': String(text || '') })]).catch(() => {})
+}
 // Electron's clipboard is the async ClipboardItem API: walk every format on offer.
 async function readClipboardFiles() {
   let items = []
@@ -2349,7 +2376,7 @@ function buildAppMenu() {
         {
           label: 'Copy Extension Error Log',
           click: () => {
-            clipboard.writeText(extLog.length ? extLog.join('\n') : '(no extension messages yet)')
+            clipWriteText(extLog.length ? extLog.join('\n') : '(no extension messages yet)')
             dialog.showMessageBox(win, { message: 'Copied the extension log.', detail: 'Paste it (Cmd+V) in the chat with Claude.' })
           },
         },

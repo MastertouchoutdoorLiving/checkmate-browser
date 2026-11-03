@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('imsg', {
   addContact: (c) => ipcRenderer.invoke('imsg:add-contact', c),
   whatsapp: (phone, text) => ipcRenderer.invoke('imsg:whatsapp', phone, text),
   revealAttachment: (id) => ipcRenderer.send('imsg:reveal-attachment', id),
+  saveAttachment: (id, mode) => ipcRenderer.invoke('imsg:save-attachment', id, mode),
   openUrl: (url) => ipcRenderer.send('imsg:open-url', url),
   openInMessages: (handle) => ipcRenderer.send('imsg:open-messages', handle),
   openPrivacySettings: () => ipcRenderer.send('imsg:open-privacy'),
