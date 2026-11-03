@@ -110,7 +110,7 @@
         <div id="ai-pop" hidden>
           <b>Suggest replies with AI</b>
           <p>Paste a Claude API key once. Make one at <b>console.anthropic.com</b> → API Keys. It costs a fraction of a cent per suggestion.</p>
-          <div class="jt-row"><input id="ai-key" placeholder="sk-ant-…" autocomplete="off" /><button type="button" id="ai-save" class="btn">Save</button></div>
+          <div class="jt-row"><input id="ai-key" placeholder="sk-ant-…" autocomplete="off" /><button type="button" class="btn ms-paste" data-for="#ai-key">Paste</button><button type="button" id="ai-save" class="btn">Save</button></div>
           <div id="ai-msg"></div>
         </div>
         <div id="qr-pop" hidden>
@@ -147,7 +147,7 @@
         <label class="jt-check"><input type="checkbox" id="jt-on" /> Also add to JobTread <span id="jt-org"></span></label>
         <div id="jt-connect" hidden>
           <p>Connect once: in JobTread open <b>app.jobtread.com/grants</b>, create a grant key, copy it and paste it here.</p>
-          <div class="jt-row"><input id="jt-key" placeholder="Paste JobTread grant key" autocomplete="off" /><button type="button" id="jt-connect-btn" class="btn">Connect</button></div>
+          <div class="jt-row"><input id="jt-key" placeholder="Paste JobTread grant key" autocomplete="off" /><button type="button" class="btn ms-paste" data-for="#jt-key">Paste</button><button type="button" id="jt-connect-btn" class="btn">Connect</button></div>
           <div id="jt-msg"></div>
         </div>
       </div>

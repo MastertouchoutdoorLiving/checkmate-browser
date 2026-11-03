@@ -890,6 +890,8 @@ function registerIpc() {
     const name = String(a.name || path.basename(a.file || a.path || 'Photo.jpg')).replace(/\.(heic|heif|tiff?)$/i, '.jpg')
     return jobtread.uploadFile(key, { ...jtTarget(t), name, mime: a.mime && !/heic|heif|tiff/i.test(a.mime) ? a.mime : 'image/jpeg', bytes })
   })
+  // Clipboard text for the "Paste" buttons next to our key boxes.
+  ipcMain.handle('clip:text', async (e) => (qrAllowed(e) ? String((await clipboard.readText()) || '') : ''))
   ipcMain.handle('dictate', (e) => {
     if (!qrAllowed(e) || process.platform !== 'darwin') return false
     e.sender.focus()

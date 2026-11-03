@@ -5,6 +5,7 @@
 const { contextBridge, webFrame } = require('electron')
 // WhatsApp helper buttons (Remind me, Quick replies, Save contact): shown or hidden with one toggle.
 var waTools = { open: false }
+var msRoots = []
 try { waTools.open = localStorage.getItem('__ms_wa_tools') === 'open' } catch {}
 
 const hidePasskeys = () => {
@@ -277,6 +278,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     host = document.createElement('div')
     host.id = '__ms_wa_contact'
     root = host.attachShadow({ mode: 'closed' })
+    msWire(root)
     root.innerHTML = `<style>
       .btn{position:fixed;right:24px;bottom:128px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font:500 13px -apple-system,system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
       .btn:hover{background:#f0f2f5}
@@ -308,7 +310,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
         <label class="ck"><input type="checkbox" class="jton"/> Also add to JobTread <span class="org"></span></label>
         <div class="jtc" hidden>
           <p>Connect once: in JobTread open <b>app.jobtread.com/grants</b>, create a grant key, copy it and paste it here.</p>
-          <div class="r"><input class="jtkey" placeholder="Paste JobTread grant key" autocomplete="off"/><button type="button" class="jtgo">Connect</button></div>
+          <div class="r"><input class="jtkey" placeholder="Paste JobTread grant key" autocomplete="off"/><button type="button" class="mspaste" data-for=".jtkey">Paste</button><button type="button" class="jtgo">Connect</button></div>
           <div class="jm"></div>
         </div>
       </div>
@@ -561,6 +563,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     qhost = document.createElement('div')
     qhost.id = '__ms_wa_quick'
     qroot = qhost.attachShadow({ mode: 'closed' })
+    msWire(qroot)
     qroot.innerHTML = `<style>
       *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
       .btn{position:fixed;right:24px;bottom:172px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
@@ -588,7 +591,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     <button class="btn" hidden>⚡ Quick replies</button>
     <div class="pop" hidden>
       <div class="head"><b>Quick replies</b><span class="hb"><button class="ai">✨ Suggest reply</button><button class="mic" title="Dictate">🎤</button><button class="edit">Edit</button></span></div>
-      <div class="aik" hidden><div class="tip">Paste a Claude API key once (console.anthropic.com → API Keys).</div><div class="r2"><input class="aikey" placeholder="sk-ant-…"/><button class="aisave">Save</button></div><div class="aim tip"></div></div>
+      <div class="aik" hidden><div class="tip">Paste a Claude API key once (console.anthropic.com → API Keys).</div><div class="r2"><input class="aikey" placeholder="sk-ant-…"/><button class="mspaste" data-for=".aikey">Paste</button><button class="aisave">Save</button></div><div class="aim tip"></div></div>
       <input class="q" placeholder="Search quick replies"/>
       <div class="list"></div>
       <div class="ed" hidden></div>
@@ -718,6 +721,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     rhost = document.createElement('div')
     rhost.id = '__ms_wa_remind'
     rroot = rhost.attachShadow({ mode: 'closed' })
+    msWire(rroot)
     rroot.innerHTML = `<style>
       *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
       .btn{position:fixed;right:24px;bottom:216px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
@@ -785,7 +789,9 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
   function ensureP() {
     if (phost && document.body.contains(phost)) return
     phost = document.createElement('div')
+    phost.id = '__ms_wa_photo'
     proot = phost.attachShadow({ mode: 'closed' })
+    msWire(proot)
     proot.innerHTML = `<style>
       *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
       .bg{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
@@ -892,4 +898,53 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     draw()
     troot.querySelector('.t').hidden = !document.querySelector('#main footer')
   }, 1000)
+}
+
+// ---------------------------------------------------------------- pasting into our own boxes on WhatsApp
+// WhatsApp grabs paste and Cmd+V for its own message box, so the key boxes in our helpers never got
+// the text. Our listeners are added before WhatsApp's, so they run first: we paste the text ourselves
+// and stop WhatsApp from seeing the event. The "Paste" buttons read the clipboard directly as a backup.
+;(() => {
+  if (location.hostname !== 'web.whatsapp.com') return
+  const ours = (e) => { const t = e.composedPath()[0]; return t && typeof t.id === 'string' && t.id.startsWith('__ms_wa_') ? t : null }
+  const focusedBox = () => {
+    for (const r of msRoots) { const a = r.activeElement; if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')) return a }
+    return null
+  }
+  const insert = (el, text) => {
+    if (!el || !text) return
+    const a = el.selectionStart ?? el.value.length, b = el.selectionEnd ?? el.value.length
+    el.setRangeText(text.trim(), a, b, 'end')
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  window.addEventListener('paste', (e) => {
+    if (!ours(e)) return
+    const el = focusedBox()
+    e.stopImmediatePropagation()
+    if (!el) return
+    e.preventDefault()
+    insert(el, e.clipboardData && e.clipboardData.getData('text/plain'))
+  }, true)
+  // Cmd+V (Ctrl+V): read the clipboard ourselves so WhatsApp can't swallow it.
+  window.addEventListener('keydown', async (e) => {
+    if (!ours(e) || !(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== 'v') return
+    const el = focusedBox(); if (!el) return
+    e.preventDefault(); e.stopImmediatePropagation()
+    insert(el, await ipcRenderer.invoke('clip:text'))
+  }, true)
+})()
+
+// Each helper's shadow root: remember it, and wire its "Paste" buttons (they read the clipboard directly).
+function msWire(root) {
+  msRoots.push(root)
+  root.addEventListener('click', async (e) => {
+    const btn = e.target.closest && e.target.closest('.mspaste')
+    if (!btn) return
+    e.preventDefault()
+    const el = root.querySelector(btn.dataset.for)
+    if (!el) return
+    el.focus()
+    const text = String((await ipcRenderer.invoke('clip:text')) || '').trim()
+    if (text) { el.value = text; el.dispatchEvent(new Event('input', { bubbles: true })) }
+  })
 }

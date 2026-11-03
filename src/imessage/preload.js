@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('imsg', {
   onTimers: (fn) => ipcRenderer.on('timers:changed', (e, t) => fn(t)),
   jtFind: (q) => ipcRenderer.invoke('jt:find', q),
   jtUploadAtt: (t, attId) => ipcRenderer.invoke('jt:upload-att', t, attId),
+  clipText: () => ipcRenderer.invoke('clip:text'),
   dictate: () => ipcRenderer.invoke('dictate'),
   aiStatus: () => ipcRenderer.invoke('ai:status'),
   aiSetKey: (k) => ipcRenderer.invoke('ai:set-key', k),

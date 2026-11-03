@@ -1398,3 +1398,15 @@ $('#ai-save').addEventListener('click', async () => {
 document.addEventListener('mousedown', (e) => {
   if (!$('#ai-pop').hidden && !e.target.closest('#ai-pop') && !e.target.closest('#ai-btn')) $('#ai-pop').hidden = true
 })
+
+// "Paste" buttons next to the key boxes: read the clipboard directly, in case Cmd+V is blocked.
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest && e.target.closest('.ms-paste')
+  if (!btn) return
+  e.preventDefault()
+  const el = document.querySelector(btn.dataset.for)
+  const text = ((await window.imsg.clipText()) || '').trim()
+  if (!el || !text) return
+  el.value = text
+  el.focus()
+})
