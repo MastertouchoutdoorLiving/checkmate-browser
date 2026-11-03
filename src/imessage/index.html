@@ -69,6 +69,9 @@
           <button id="hdr-unread" class="icon-btn" title="Mark as unread">
             <svg viewBox="0 0 24 24"><path d="M4 6h11M4 12h9M4 18h11"/><circle cx="19" cy="7" r="3" class="fill"/></svg>
           </button>
+          <button id="hdr-remind" class="icon-btn" title="Remind me to reply">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 2M5 4.5L3 6.5M19 4.5l2 2"/></svg>
+          </button>
           <button id="hdr-info" class="icon-btn" title="Details">
             <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M15 4.5v15"/></svg>
           </button>
@@ -80,6 +83,7 @@
           <input id="to" placeholder="To: type a name, phone number or email" autocomplete="off" hidden />
           <div id="to-list" hidden></div>
         </div>
+        <div id="timers-bar" hidden></div>
         <div id="tray" hidden></div>
         <div class="composer">
           <button id="attach" type="button" title="Add a picture or file (or paste / drag it here)">
@@ -90,6 +94,9 @@
             <svg viewBox="0 0 24 24"><path d="M13 3L5 13h6l-1 8 8-10h-6z"/></svg>
           </button>
           <textarea id="text" rows="1" placeholder="Write a message…"></textarea>
+          <button id="send-later" type="button" title="Send later">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
+          </button>
           <button id="send" type="submit" title="Send (Enter)">
             <svg viewBox="0 0 24 24"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
           </button>
@@ -138,6 +145,14 @@
         <button type="submit" id="contact-save" class="btn primary">Save contact</button>
       </div>
     </form>
+  </div>
+  <div id="when-menu" hidden>
+    <div class="wm-title"></div>
+    <button data-w="1h">In 1 hour</button>
+    <button data-w="3h">In 3 hours</button>
+    <button data-w="tom9">Tomorrow 9:00 AM</button>
+    <button data-w="mon9">Monday 9:00 AM</button>
+    <div class="wm-pick"><input type="datetime-local" id="wm-at" /><button data-w="pick" class="primary">Set</button></div>
   </div>
   <div id="lightbox" hidden><img alt="" /><button id="lightbox-reveal" class="btn">Show in Finder</button></div>
   <div id="wa-modal" hidden>

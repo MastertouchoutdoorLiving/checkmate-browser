@@ -833,6 +833,38 @@ function registerIpc() {
     const tab = findTabByWebContents(e.sender)
     if (tab && tab.internal) imsgOpenChat = guid ? String(guid) : null
   })
+  ipcMain.handle('timers:list', (e) => (qrAllowed(e) ? timersState() : { reminders: [], scheduled: [] }))
+  ipcMain.handle('timers:remind', (e, r) => {
+    if (!qrAllowed(e) || !r) throw new Error('Not allowed')
+    const at = Number(r.at)
+    if (!(at > Date.now() - 60000)) throw new Error('Pick a time in the future.')
+    const kind = r.kind === 'wa' ? 'wa' : 'imsg'
+    const item = { id: newId(), kind, at, title: String(r.title || '').slice(0, 120), note: String(r.note || '').slice(0, 200), ...(kind === 'wa' ? { name: String(r.name || '').slice(0, 120) } : { guid: String(r.guid || '') }) }
+    reminders().push(item)
+    store.save()
+    notifyPages('timers:changed', timersState())
+    return timersState()
+  })
+  ipcMain.handle('timers:schedule', (e, m) => {
+    const tab = findTabByWebContents(e.sender)
+    if (!tab || !tab.internal || !m) throw new Error('Not allowed')
+    const at = Number(m.at)
+    if (!(at > Date.now())) throw new Error('Pick a time in the future.')
+    const text = String(m.text || '').slice(0, 5000)
+    if (!text.trim()) throw new Error('Write the message first.')
+    scheduled().push({ id: newId(), at, text, title: String(m.title || '').slice(0, 120), ...(m.guid ? { guid: String(m.guid) } : { handle: String(m.handle || '') }) })
+    store.save()
+    notifyPages('timers:changed', timersState())
+    return timersState()
+  })
+  ipcMain.handle('timers:cancel', (e, id) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    store.state.settings.reminders = reminders().filter((r) => r.id !== id)
+    store.state.settings.scheduled = scheduled().filter((m) => m.id !== id)
+    store.save()
+    notifyPages('timers:changed', timersState())
+    return timersState()
+  })
   ipcMain.handle('jt:status', (e) => (qrAllowed(e) ? jtStatus() : { connected: false }))
   ipcMain.handle('jt:set-key', (e, key) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')
@@ -1353,6 +1385,67 @@ async function jtAdd(c) {
   for (const k of ['first', 'company', 'phone', 'email', 'street', 'city', 'state', 'zip', 'note']) clean[k] = String((c && c[k]) || '').trim().slice(0, 500)
   return jobtread.addCustomer(key, clean)
 }
+
+// ---------------------------------------------------------------- reminders + scheduled iMessages
+// Both run while the browser is open (if it was closed at the time, they fire when it opens again).
+const reminders = () => (store.state.settings.reminders = store.state.settings.reminders || [])
+const scheduled = () => (store.state.settings.scheduled = store.state.settings.scheduled || [])
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+function notifyPages(channel, data) {
+  for (const rt of runtimes.values())
+    for (const t of rt.tabs.values()) if (!t.view.webContents.isDestroyed() && (t.internal || hostOf(t.url) === 'web.whatsapp.com')) t.view.webContents.send(channel, data)
+}
+function openWhatsAppChat(name) {
+  for (const sp of store.state.spaces) {
+    const rt = runtimes.get(sp.id)
+    const t = rt && [...rt.tabs.values()].find((x) => hostOf(x.url) === 'web.whatsapp.com')
+    if (t) {
+      if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus() }
+      openUnified({ kind: 'wa', spaceId: sp.id, tabId: t.id, name })
+      return
+    }
+  }
+}
+function fireReminder(r) {
+  playAlertSound()
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title: `Reply to ${r.title || 'this conversation'}`, body: r.note || (r.kind === 'wa' ? 'WhatsApp reminder' : 'iMessage reminder'), silent: true })
+  n.on('click', () => (r.kind === 'wa' ? openWhatsAppChat(r.name) : showImessageChat(r.guid)))
+  n.show()
+}
+let schedBusy = false
+async function tickTimers() {
+  const now = Date.now()
+  const due = reminders().filter((r) => r.at <= now)
+  if (due.length) {
+    store.state.settings.reminders = reminders().filter((r) => r.at > now)
+    store.save()
+    due.forEach(fireReminder)
+    notifyPages('timers:changed', timersState())
+  }
+  if (schedBusy) return
+  const send = scheduled().filter((m) => m.at <= now && !m.failed)
+  if (!send.length) return
+  schedBusy = true
+  try {
+    for (const m of send) {
+      try {
+        if (m.guid) await imessage.sendToChat(m.guid, m.text)
+        else await imessage.sendToHandle(m.handle, m.text)
+        store.state.settings.scheduled = scheduled().filter((x) => x.id !== m.id)
+      } catch (e) {
+        m.failed = String(e.message || e).slice(0, 200)
+        if (Notification.isSupported()) new Notification({ title: `Scheduled message to ${m.title || 'contact'} not sent`, body: m.failed }).show()
+      }
+      store.save()
+    }
+    notifyPages('timers:changed', timersState())
+  } finally {
+    schedBusy = false
+  }
+}
+const timersState = () => ({ reminders: reminders(), scheduled: scheduled() })
+setInterval(() => tickTimers().catch(() => {}), 20 * 1000)
 
 // ---------------------------------------------------------------- quick replies (iMessage + WhatsApp)
 const DEFAULT_QUICK_REPLIES = [

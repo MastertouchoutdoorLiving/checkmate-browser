@@ -140,6 +140,7 @@ async function boot() {
   setInterval(refreshChats, 5000)
   setupAlerts()
   setupQuickReplies()
+  setupTimers()
   const unslide = () => {
     for (const el of [document.documentElement, document.body, $('#app')]) if (el && el.scrollLeft) el.scrollLeft = 0
   }
@@ -353,6 +354,7 @@ document.addEventListener('mousedown', (e) => {
 async function loadMessages(chat, scroll = true) {
   if (scroll) markRead(chat) // opening a conversation reads it
   if (scroll) window.imsg.viewing(chat.guid)
+  if (scroll) setTimeout(renderTimers, 0)
   if (scroll && current && current.id !== chat.id) clearTray()
   current = chat
   $('#to').hidden = true
@@ -1166,3 +1168,97 @@ $('#jt-connect-btn').addEventListener('click', async () => {
     $('#jt-msg').textContent = String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
   }
 })
+
+
+// ---- remind me / send later
+let timers = { reminders: [], scheduled: [] }
+let whenCb = null
+function whenAt(w) {
+  const d = new Date()
+  if (w === '1h') return Date.now() + 3600e3
+  if (w === '3h') return Date.now() + 3 * 3600e3
+  if (w === 'tom9') { d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return +d }
+  if (w === 'mon9') { d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7)); d.setHours(9, 0, 0, 0); return +d }
+  if (w === 'pick') { const v = $('#wm-at').value; return v ? +new Date(v) : 0 }
+  return 0
+}
+const fmtWhen = (t) => {
+  const d = new Date(t)
+  const today = new Date()
+  const tm = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (d.toDateString() === today.toDateString()) return `today ${tm}`
+  const tom = new Date(today); tom.setDate(tom.getDate() + 1)
+  if (d.toDateString() === tom.toDateString()) return `tomorrow ${tm}`
+  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + ' ' + tm
+}
+function openWhen(anchor, title, cb) {
+  const m = $('#when-menu')
+  m.querySelector('.wm-title').textContent = title
+  const d = new Date(Date.now() + 3600e3)
+  d.setMinutes(0, 0, 0)
+  $('#wm-at').value = new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  whenCb = cb
+  m.hidden = false
+  const r = anchor.getBoundingClientRect()
+  const h = m.offsetHeight
+  m.style.left = Math.max(8, Math.min(innerWidth - 258, r.right - 250)) + 'px'
+  m.style.top = (r.bottom + h + 8 > innerHeight ? r.top - h - 6 : r.bottom + 6) + 'px'
+}
+function renderTimers() {
+  const bar = $('#timers-bar')
+  const c = current && !current.compose ? current : null
+  if (!c) { bar.hidden = true; return }
+  const rs = timers.reminders.filter((r) => r.kind !== 'wa' && r.guid === c.guid)
+  const ms = timers.scheduled.filter((m) => m.guid === c.guid)
+  bar.innerHTML =
+    rs.map((r) => `<div class="tm"><span class="tx">⏰ <b>Reminder</b> ${esc(fmtWhen(r.at))}</span><button data-id="${esc(r.id)}">Cancel</button></div>`).join('') +
+    ms.map((m) => `<div class="tm ${m.failed ? 'failed' : ''}"><span class="tx">🕒 <b>${m.failed ? 'Not sent' : 'Sends ' + esc(fmtWhen(m.at))}</b> · ${esc(m.text)}</span><button data-id="${esc(m.id)}">Cancel</button></div>`).join('')
+  bar.hidden = !(rs.length || ms.length)
+}
+async function setupTimers() {
+  try { timers = await window.imsg.timers() } catch {}
+  window.imsg.onTimers((t) => { timers = t; renderTimers() })
+  $('#when-menu').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-w]')
+    if (!b) return
+    const at = whenAt(b.dataset.w)
+    if (!at) return
+    $('#when-menu').hidden = true
+    if (whenCb) whenCb(at)
+  })
+  document.addEventListener('mousedown', (e) => {
+    if (!$('#when-menu').hidden && !e.target.closest('#when-menu') && !e.target.closest('#hdr-remind') && !e.target.closest('#send-later')) $('#when-menu').hidden = true
+  })
+  $('#hdr-remind').addEventListener('click', (e) => {
+    const c = current
+    if (!c || c.compose) return
+    openWhen(e.currentTarget, 'Remind me to reply', async (at) => {
+      try {
+        timers = await window.imsg.remind({ kind: 'imsg', guid: c.guid, title: nameOf(c), at })
+        renderTimers()
+        toast(`I'll remind you ${fmtWhen(at)}`)
+      } catch (err) { toast(String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')) }
+    })
+  })
+  $('#send-later').addEventListener('click', (e) => {
+    const c = current
+    const text = $('#text').value
+    if (!c || c.compose) return toast('Open a conversation first, then use Send later.')
+    if (!text.trim()) return toast('Write the message first, then choose Send later.')
+    openWhen(e.currentTarget, 'Send this message', async (at) => {
+      try {
+        timers = await window.imsg.schedule({ guid: c.guid, title: nameOf(c), text: $('#text').value, at })
+        $('#text').value = ''
+        $('#text').dispatchEvent(new Event('input', { bubbles: true }))
+        renderTimers()
+        toast(`Will send ${fmtWhen(at)}`)
+      } catch (err) { toast(String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')) }
+    })
+  })
+  $('#timers-bar').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-id]')
+    if (!b) return
+    try { timers = await window.imsg.cancelTimer(b.dataset.id) } catch {}
+    renderTimers()
+  })
+}

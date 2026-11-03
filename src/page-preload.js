@@ -634,3 +634,69 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     qroot.querySelector('.btn').hidden = !document.querySelector('#main footer')
   }, 1000)
 }
+
+// ---------------------------------------------------------------- WhatsApp: remind me to reply
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  let rhost, rroot
+  const chatTitle = () => {
+    const head = document.querySelector('#main header')
+    return (((head && (head.querySelector('span[dir="auto"]') || head.querySelector('span[title]'))) || {}).textContent || '').trim()
+  }
+  const at = (w) => {
+    const d = new Date()
+    if (w === '1h') return Date.now() + 3600e3
+    if (w === '3h') return Date.now() + 3 * 3600e3
+    d.setDate(d.getDate() + (w === 'mon9' ? ((8 - d.getDay()) % 7) || 7 : 1))
+    d.setHours(9, 0, 0, 0)
+    return +d
+  }
+  function ensureR() {
+    if (rhost && document.body.contains(rhost)) return
+    rhost = document.createElement('div')
+    rhost.id = '__ms_wa_remind'
+    rroot = rhost.attachShadow({ mode: 'closed' })
+    rroot.innerHTML = `<style>
+      *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
+      .btn{position:fixed;right:24px;bottom:172px;z-index:2147483646;background:#fff;color:#111b21;border:1px solid #d1d7db;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:500;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer}
+      .btn:hover{background:#f0f2f5}
+      .menu{position:fixed;right:24px;bottom:216px;z-index:2147483647;width:220px;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:6px;font-size:13px;color:#111b21}
+      .menu b{display:block;font-size:12px;color:#667781;padding:6px 8px 4px}
+      .menu button{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px}
+      .menu button:hover{background:#f0f2f5}
+      .ok{position:fixed;right:24px;bottom:216px;z-index:2147483647;background:#111b21;color:#fff;border-radius:10px;padding:8px 12px;font-size:13px}
+      [hidden]{display:none!important}
+    </style>
+    <button class="btn" hidden>⏰ Remind me</button>
+    <div class="menu" hidden><b>Remind me to reply</b>
+      <button data-w="1h">In 1 hour</button><button data-w="3h">In 3 hours</button>
+      <button data-w="tom9">Tomorrow 9:00 AM</button><button data-w="mon9">Monday 9:00 AM</button></div>
+    <div class="ok" hidden></div>`
+    const menu = rroot.querySelector('.menu')
+    const ok = rroot.querySelector('.ok')
+    rroot.querySelector('.btn').addEventListener('click', () => (menu.hidden = !menu.hidden))
+    menu.addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-w]')
+      if (!b) return
+      menu.hidden = true
+      const name = chatTitle()
+      const when = at(b.dataset.w)
+      try {
+        await ipcRenderer.invoke('timers:remind', { kind: 'wa', name, title: name, at: when })
+        ok.textContent = `⏰ I'll remind you ${b.textContent.toLowerCase()}`
+      } catch {
+        ok.textContent = 'Could not set the reminder'
+      }
+      ok.hidden = false
+      setTimeout(() => (ok.hidden = true), 2500)
+    })
+    document.addEventListener('mousedown', (e) => {
+      if (!menu.hidden && !e.composedPath().includes(rhost)) menu.hidden = true
+    }, true)
+    document.body.appendChild(rhost)
+  }
+  setInterval(() => {
+    if (!document.body) return
+    ensureR()
+    rroot.querySelector('.btn').hidden = !document.querySelector('#main footer')
+  }, 1000)
+}
