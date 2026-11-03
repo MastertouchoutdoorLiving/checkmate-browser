@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('imsg', {
   schedule: (m) => ipcRenderer.invoke('timers:schedule', m),
   cancelTimer: (id) => ipcRenderer.invoke('timers:cancel', id),
   onTimers: (fn) => ipcRenderer.on('timers:changed', (e, t) => fn(t)),
+  jtFind: (q) => ipcRenderer.invoke('jt:find', q),
+  jtUploadAtt: (t, attId) => ipcRenderer.invoke('jt:upload-att', t, attId),
   jtStatus: () => ipcRenderer.invoke('jt:status'),
   jtSetKey: (k) => ipcRenderer.invoke('jt:set-key', k),
   jtSetOn: (on) => ipcRenderer.invoke('jt:set-on', on),

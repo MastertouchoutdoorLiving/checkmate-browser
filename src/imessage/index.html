@@ -154,7 +154,16 @@
     <button data-w="mon9">Monday 9:00 AM</button>
     <div class="wm-pick"><input type="datetime-local" id="wm-at" /><button data-w="pick" class="primary">Set</button></div>
   </div>
-  <div id="lightbox" hidden><img alt="" /><button id="lightbox-reveal" class="btn">Show in Finder</button></div>
+  <div id="lightbox" hidden><img alt="" /><button id="lightbox-reveal" class="btn">Show in Finder</button><button id="lightbox-jt" class="btn" hidden>Send to JobTread</button></div>
+  <div id="jt-photo" class="modal" hidden>
+    <div class="sheet">
+      <h2>Send picture to JobTread</h2>
+      <p class="sheet-sub">Saved in the Photos folder of the job you pick.</p>
+      <label>Where<select id="jtp-target"></select></label>
+      <div id="jtp-msg"></div>
+      <div class="sheet-actions"><button type="button" id="jtp-cancel" class="btn">Cancel</button><button type="button" id="jtp-send" class="btn primary">Send</button></div>
+    </div>
+  </div>
   <div id="wa-modal" hidden>
     <form class="sheet" id="wa-form">
       <h2>Send to team on WhatsApp</h2>

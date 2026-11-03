@@ -141,6 +141,7 @@ async function boot() {
   setupAlerts()
   setupQuickReplies()
   setupTimers()
+  jtRefresh()
   const unslide = () => {
     for (const el of [document.documentElement, document.body, $('#app')]) if (el && el.scrollLeft) el.scrollLeft = 0
   }
@@ -306,6 +307,7 @@ function renderDetails() {
         )
         .join('')}
     </div>
+    <div class="d-section" id="jt-card" hidden></div>
     <div class="d-section">
       <div class="d-label">Actions</div>
       <button class="d-action" data-a="read">${ICON.unread}${u ? 'Mark as read' : 'Mark as unread'}</button>
@@ -314,6 +316,7 @@ function renderDetails() {
       <button class="d-action" data-a="open">${ICON.open}Open in Messages app</button>
       <button class="d-action danger" data-a="delete">${ICON.trash}Delete conversation</button>
     </div>`
+  jtCard(c)
 }
 
 function chatAction(c, a) {
@@ -419,6 +422,7 @@ $('#messages').addEventListener('click', (e) => {
   if (img) {
     $('#lightbox img').src = img.src
     $('#lightbox').dataset.att = img.dataset.att
+    $('#lightbox-jt').hidden = !jt.connected
     $('#lightbox').hidden = false
     return
   }
@@ -427,6 +431,7 @@ $('#messages').addEventListener('click', (e) => {
 })
 $('#lightbox').addEventListener('click', (e) => {
   if (e.target.id === 'lightbox-reveal') return window.imsg.revealAttachment(Number($('#lightbox').dataset.att))
+  if (e.target.id === 'lightbox-jt') return jtPhoto(Number($('#lightbox').dataset.att))
   $('#lightbox').hidden = true
 })
 document.addEventListener('keydown', (e) => e.key === 'Escape' && ($('#lightbox').hidden = true))
@@ -1262,3 +1267,80 @@ async function setupTimers() {
     renderTimers()
   })
 }
+
+
+// ---- JobTread customer card (details panel) and "Send picture to JobTread"
+const jtCache = new Map() // chat guid -> { at, data }
+const errMsg = (err) => String(err.message || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+async function jtLookup(c, fresh) {
+  const hit = jtCache.get(c.guid)
+  if (hit && !fresh && Date.now() - hit.at < 5 * 60e3) return hit.data
+  const q = { phone: c.rawHandle || c.handle || '', email: /@/.test(c.rawHandle || '') ? c.rawHandle : '', name: c.saved ? nameOf(c) : '' }
+  const data = await window.imsg.jtFind(q)
+  jtCache.set(c.guid, { at: Date.now(), data })
+  return data
+}
+async function jtCard(c) {
+  const box = $('#jt-card')
+  if (!box) return
+  if (!jt.connected || c.group) { box.hidden = true; return }
+  const draw = (d) => {
+    if (!$('#jt-card') || currentChat()?.guid !== c.guid) return
+    const b = $('#jt-card')
+    b.hidden = false
+    if (d === 'loading') { b.innerHTML = '<div class="d-label">JobTread</div><div class="jt-muted">Looking up…</div>'; return }
+    if (!d) {
+      b.innerHTML = '<div class="d-label">JobTread</div><div class="jt-muted">Not a JobTread customer yet.</div><button class="d-action" data-a="add">' + ICON.addPerson + 'Save contact + add to JobTread</button>'
+      return
+    }
+    const open = d.jobs.filter((j) => !j.closed)
+    const jobs = (open.length ? open : d.jobs).slice(0, 4)
+    b.innerHTML = `<div class="d-label">JobTread</div>
+      <button class="jt-cust" data-url="${esc(d.url)}"><b>${esc(d.name)}</b>${d.address ? `<span>${esc(d.address)}</span>` : ''}</button>
+      ${jobs.map((j) => `<button class="jt-job" data-url="${esc(j.url)}"><span class="jn">${j.number ? '#' + esc(j.number) + ' ' : ''}${esc(j.name)}</span>${j.status || j.closed ? `<span class="js ${j.closed ? 'closed' : ''}">${esc(j.closed ? 'Closed' : j.status)}</span>` : ''}</button>`).join('')}
+      ${!d.jobs.length ? '<div class="jt-muted">No jobs yet.</div>' : ''}`
+  }
+  const hit = jtCache.get(c.guid)
+  if (hit && Date.now() - hit.at < 5 * 60e3) return draw(hit.data)
+  draw('loading')
+  try { draw(await jtLookup(c)) } catch (err) { box.innerHTML = `<div class="d-label">JobTread</div><div class="jt-muted">${esc(errMsg(err))}</div>` }
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('#jt-card [data-url]')
+  if (b) window.imsg.jtOpen(b.dataset.url)
+})
+async function jtPhoto(attId) {
+  const c = currentChat()
+  if (!c) return
+  $('#lightbox').hidden = true
+  const m = $('#jt-photo')
+  const sel = $('#jtp-target')
+  $('#jtp-msg').textContent = 'Looking up the customer…'
+  $('#jtp-msg').className = ''
+  sel.innerHTML = ''
+  $('#jtp-send').disabled = true
+  m.hidden = false
+  let d = null
+  try { d = await jtLookup(c) } catch (err) { $('#jtp-msg').textContent = errMsg(err); return }
+  if (!d) { $('#jtp-msg').textContent = 'This person is not a JobTread customer yet. Save the contact with "Also add to JobTread" first.'; return }
+  const jobs = [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)]
+  sel.innerHTML = jobs.map((j) => `<option value="job:${esc(j.id)}">Job ${j.number ? '#' + esc(j.number) + ' · ' : ''}${esc(j.name)}${j.closed ? ' (closed)' : ''}</option>`).join('') +
+    `<option value="account:${esc(d.id)}">Customer files · ${esc(d.name)}</option>`
+  $('#jtp-msg').textContent = ''
+  $('#jtp-send').disabled = false
+  $('#jtp-send').onclick = async () => {
+    const [targetType, targetId] = sel.value.split(':')
+    $('#jtp-send').disabled = true
+    $('#jtp-msg').textContent = 'Sending…'
+    try {
+      await window.imsg.jtUploadAtt({ targetType, targetId }, attId)
+      m.hidden = true
+      toast('Picture sent to JobTread')
+    } catch (err) {
+      $('#jtp-msg').className = 'err'
+      $('#jtp-msg').textContent = errMsg(err)
+      $('#jtp-send').disabled = false
+    }
+  }
+}
+$('#jtp-cancel').addEventListener('click', () => ($('#jt-photo').hidden = true))

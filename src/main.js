@@ -865,6 +865,31 @@ function registerIpc() {
     notifyPages('timers:changed', timersState())
     return timersState()
   })
+  ipcMain.handle('jt:find', (e, q) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) return null
+    const c = q || {}
+    return jobtread.findCustomer(key, { phone: String(c.phone || '').slice(0, 40), email: String(c.email || '').slice(0, 120), name: String(c.name || '').slice(0, 120) })
+  })
+  const jtTarget = (t) => ({ targetType: t && t.targetType === 'account' ? 'account' : 'job', targetId: String((t && t.targetId) || '') })
+  ipcMain.handle('jt:upload', (e, t, file) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    const f = file || {}
+    return jobtread.uploadFile(key, { ...jtTarget(t), name: String(f.name || 'Photo.jpg').slice(0, 120), mime: String(f.mime || 'image/jpeg').slice(0, 60), bytes: f.bytes })
+  })
+  ipcMain.handle('jt:upload-att', async (e, t, attId) => {
+    const tab = findTabByWebContents(e.sender)
+    if (!tab || !tab.internal) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    const a = await imessage.attachmentFile(Number(attId))
+    const bytes = fs.readFileSync(a.file || a.path)
+    const name = String(a.name || path.basename(a.file || a.path || 'Photo.jpg')).replace(/\.(heic|heif|tiff?)$/i, '.jpg')
+    return jobtread.uploadFile(key, { ...jtTarget(t), name, mime: a.mime && !/heic|heif|tiff/i.test(a.mime) ? a.mime : 'image/jpeg', bytes })
+  })
   ipcMain.handle('jt:status', (e) => (qrAllowed(e) ? jtStatus() : { connected: false }))
   ipcMain.handle('jt:set-key', (e, key) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')
@@ -1270,6 +1295,9 @@ function showContextMenu(tab, params) {
       { label: 'Copy image', click: () => wc.copyImageAt(params.x, params.y) },
       { type: 'separator' }
     )
+  }
+  if (params.mediaType === 'image' && params.srcURL && hostOf(tab.url) === 'web.whatsapp.com' && jtKey()) {
+    items.push({ label: 'Send picture to JobTread…', click: () => wc.send('jt:photo', params.srcURL) }, { type: 'separator' })
   }
   if (params.isEditable) items.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' })
   else if (params.selectionText) items.push({ role: 'copy' }, { type: 'separator' })

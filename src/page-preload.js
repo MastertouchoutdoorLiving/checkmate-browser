@@ -700,3 +700,98 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     rroot.querySelector('.btn').hidden = !document.querySelector('#main footer')
   }, 1000)
 }
+
+// ---------------------------------------------------------------- WhatsApp: send a picture to JobTread
+// Right-click a picture → "Send picture to JobTread…". Finds the customer by this chat's phone/name.
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  const esc2 = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+  const errT = (err) => String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+  let phost, proot
+  function chatInfo() {
+    const main = document.querySelector('#main')
+    const head = main && main.querySelector('header')
+    const title = (((head && (head.querySelector('span[dir="auto"]') || head.querySelector('span[title]'))) || {}).textContent || '').trim()
+    let phone = ''
+    const idEl = main && main.querySelector('[data-id*="@c.us"]')
+    const m = idEl && /_(\d+)@c\.us/.exec(idEl.getAttribute('data-id'))
+    if (m) phone = m[1]
+    if (!phone && /^\+?[\d\s()-]{7,}$/.test(title)) phone = title.replace(/\D/g, '')
+    return { title, phone }
+  }
+  function ensureP() {
+    if (phost && document.body.contains(phost)) return
+    phost = document.createElement('div')
+    proot = phost.attachShadow({ mode: 'closed' })
+    proot.innerHTML = `<style>
+      *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
+      .bg{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center}
+      .card{background:#fff;border-radius:12px;padding:20px 22px;width:380px;font-size:13px;color:#111b21;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+      h3{margin:0 0 4px;font-size:16px} p{margin:0 0 12px;color:#667781}
+      img{max-width:100%;max-height:160px;border-radius:8px;display:block;margin:0 auto 10px}
+      select{width:100%;border:1px solid #d1d7db;border-radius:8px;padding:7px;font-size:13px}
+      .m{min-height:18px;margin:8px 0;color:#667781}.m.err{color:#d93025}
+      .a{display:flex;justify-content:flex-end;gap:8px}
+      .a button{border:0;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
+      .go{background:#00a884;color:#fff}.no{background:#f0f2f5}
+      [hidden]{display:none!important}
+    </style>
+    <div class="bg" hidden><div class="card">
+      <h3>Send picture to JobTread</h3><p>Saved in the Photos folder of the job you pick.</p>
+      <img alt=""/><select></select><div class="m"></div>
+      <div class="a"><button class="no">Cancel</button><button class="go">Send</button></div>
+    </div></div>`
+    proot.querySelector('.no').addEventListener('click', () => (proot.querySelector('.bg').hidden = true))
+    for (const ev of ['keydown', 'keypress', 'keyup']) proot.addEventListener(ev, (e) => e.stopPropagation())
+    document.body.appendChild(phost)
+  }
+  ipcRenderer.on('jt:photo', async (_e, src) => {
+    ensureP()
+    const bg = proot.querySelector('.bg')
+    const sel = proot.querySelector('select')
+    const msg = proot.querySelector('.m')
+    const go = proot.querySelector('.go')
+    proot.querySelector('img').src = src
+    sel.innerHTML = ''
+    msg.className = 'm'
+    msg.textContent = 'Looking up the customer…'
+    go.disabled = true
+    bg.hidden = false
+    const info = chatInfo()
+    let d = null
+    try {
+      d = await ipcRenderer.invoke('jt:find', { phone: info.phone, name: /^\+?[\d\s()-]{7,}$/.test(info.title) ? '' : info.title })
+    } catch (err) {
+      msg.className = 'm err'
+      msg.textContent = errT(err)
+      return
+    }
+    if (!d) {
+      msg.textContent = 'This chat is not a JobTread customer yet. Use 👤 Save contact with "Also add to JobTread" first.'
+      return
+    }
+    const jobs = [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)]
+    sel.innerHTML = jobs.map((j) => `<option value="job:${esc2(j.id)}">Job ${j.number ? '#' + esc2(j.number) + ' · ' : ''}${esc2(j.name)}${j.closed ? ' (closed)' : ''}</option>`).join('') +
+      `<option value="account:${esc2(d.id)}">Customer files · ${esc2(d.name)}</option>`
+    msg.textContent = ''
+    go.disabled = false
+    go.onclick = async () => {
+      go.disabled = true
+      msg.className = 'm'
+      msg.textContent = 'Sending…'
+      try {
+        const blob = await (await fetch(src)).blob()
+        const bytes = new Uint8Array(await blob.arrayBuffer())
+        const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
+        const [targetType, targetId] = sel.value.split(':')
+        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')
+        await ipcRenderer.invoke('jt:upload', { targetType, targetId }, { name: `WhatsApp ${stamp}.${ext}`, mime: blob.type || 'image/jpeg', bytes })
+        msg.textContent = '✓ Sent to JobTread'
+        setTimeout(() => (bg.hidden = true), 1200)
+      } catch (err) {
+        msg.className = 'm err'
+        msg.textContent = errT(err)
+        go.disabled = false
+      }
+    }
+  })
+}
