@@ -35,7 +35,8 @@ const imessage = require('./imessage')
 // Built-in pages that aren't websites.
 const IMESSAGE_URL = 'internal:imessage'
 const INBOX_URL = 'internal:unread'
-const isInternal = (url) => url === IMESSAGE_URL || url === INBOX_URL
+const TASKS_URL = 'internal:tasks'
+const isInternal = (url) => url === IMESSAGE_URL || url === INBOX_URL || url === TASKS_URL
 
 // The app is shown as "CheckMate Browser". Its internal name stays "MultiSpace Browser" on purpose:
 // that name picks the data folder and the Keychain key, so your logins and passwords carry over.
@@ -401,7 +402,7 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true, 
   win.contentView.addChildView(view)
   view.setVisible(false)
 
-  if (internal) view.webContents.loadFile(tab.url === INBOX_URL ? path.join(__dirname, 'inbox', 'index.html') : path.join(__dirname, 'imessage', 'index.html')).catch(() => {})
+  if (internal) view.webContents.loadFile(path.join(__dirname, tab.url === INBOX_URL ? 'inbox' : tab.url === TASKS_URL ? 'tasks' : 'imessage', 'index.html')).catch(() => {})
   else if (tab.sleeping) {} // loads when you click it
   // Wait until the space's extensions are loaded so content scripts run on the first page.
   else Promise.resolve(rt.ready).finally(() => view.webContents.loadURL(tab.url).catch(() => {}))
@@ -864,6 +865,46 @@ function registerIpc() {
     store.save()
     notifyPages('timers:changed', timersState())
     return timersState()
+  })
+  // To-dos for the Tasks dashboard
+  ipcMain.handle('todos:list', (e) => (qrAllowed(e) ? todos() : []))
+  ipcMain.handle('todos:add', (e, t) => {
+    if (!isInternalSender(e) || !t) throw new Error('Not allowed')
+    const text = String(t.text || '').trim().slice(0, 500)
+    if (!text) throw new Error('Write the to-do first.')
+    const due = Number(t.due) || null
+    todos().push({ id: newId(), text, due, done: false, created: Date.now() })
+    store.save()
+    notifyPages('todos:changed', todos())
+    return todos()
+  })
+  ipcMain.handle('todos:update', (e, id, patch) => {
+    if (!isInternalSender(e)) throw new Error('Not allowed')
+    const t = todos().find((x) => x.id === id)
+    if (t && patch) {
+      if (typeof patch.done === 'boolean') { t.done = patch.done; t.doneAt = patch.done ? Date.now() : null }
+      if (typeof patch.text === 'string' && patch.text.trim()) t.text = patch.text.trim().slice(0, 500)
+      if ('due' in patch) { t.due = Number(patch.due) || null; t.notified = false }
+      store.save()
+      notifyPages('todos:changed', todos())
+    }
+    return todos()
+  })
+  ipcMain.handle('todos:delete', (e, id) => {
+    if (!isInternalSender(e)) throw new Error('Not allowed')
+    store.state.settings.todos = id === '*done' ? todos().filter((x) => !x.done) : todos().filter((x) => x.id !== id)
+    store.save()
+    notifyPages('todos:changed', todos())
+    return todos()
+  })
+  // Open the conversation a reminder is about
+  ipcMain.handle('timers:open', (e, id) => {
+    if (!isInternalSender(e)) return false
+    const r = reminders().find((x) => x.id === id)
+    if (!r) return false
+    if (r.kind === 'wa') openWhatsAppChat(r.name)
+    else showImessageChat(r.guid)
+    return true
   })
   ipcMain.handle('jt:find', (e, q) => {
     if (!qrAllowed(e)) throw new Error('Not allowed')
@@ -1440,6 +1481,25 @@ async function jtAdd(c) {
 // Both run while the browser is open (if it was closed at the time, they fire when it opens again).
 const reminders = () => (store.state.settings.reminders = store.state.settings.reminders || [])
 const scheduled = () => (store.state.settings.scheduled = store.state.settings.scheduled || [])
+const todos = () => (store.state.settings.todos = store.state.settings.todos || [])
+const isInternalSender = (e) => !!(findTabByWebContents(e.sender) || {}).internal
+function showTasks() {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  for (const sp of store.state.spaces) {
+    const a = sp.apps.find((x) => x.url === TASKS_URL)
+    if (a) return openApp(sp.id, a.id)
+  }
+}
+function fireTodo(t) {
+  playAlertSound()
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title: 'To-do due', body: t.text, silent: true })
+  n.on('click', showTasks)
+  n.show()
+}
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
 function notifyPages(channel, data) {
   for (const rt of runtimes.values())
@@ -1472,6 +1532,12 @@ async function tickTimers() {
     store.save()
     due.forEach(fireReminder)
     notifyPages('timers:changed', timersState())
+  }
+  const dueTodos = todos().filter((t) => !t.done && t.due && t.due <= now && !t.notified)
+  if (dueTodos.length) {
+    dueTodos.forEach((t) => { t.notified = true; fireTodo(t) })
+    store.save()
+    notifyPages('todos:changed', todos())
   }
   if (schedBusy) return
   const send = scheduled().filter((m) => m.at <= now && !m.failed)
@@ -1954,6 +2020,18 @@ app.whenReady().then(() => {
   store.state.spaces.forEach((s) => getRuntime(s.id))
   setTimeout(startImessageWatcher, 3000)
   updater.start(() => win)
+  if (!store.state.settings.tasksAppAdded) {
+    store.state.settings.tasksAppAdded = true
+    const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]
+    if (sp && !sp.apps.some((a) => a.url === TASKS_URL)) {
+      const a = store.addApp(sp.id, CATALOG.find((x) => x.url === TASKS_URL))
+      sp.apps.splice(sp.apps.indexOf(a), 1)
+      const at = sp.apps.findIndex((x) => x.url === INBOX_URL)
+      sp.apps.splice(at + 1, 0, a)
+      store.save()
+      pushState()
+    }
+  }
   if (!store.state.settings.unreadAppAdded) {
     store.state.settings.unreadAppAdded = true
     const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]

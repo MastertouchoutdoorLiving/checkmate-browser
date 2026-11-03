@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:" />
+<title>Tasks</title>
+<link rel="stylesheet" href="tasks.css" />
+</head>
+<body>
+  <div id="wrap">
+    <header>
+      <h1>Tasks</h1>
+      <div id="stats"></div>
+    </header>
+
+    <form id="add">
+      <input id="add-text" placeholder="Add a to-do… (e.g. Call Andrew about the pavers)" autocomplete="off" />
+      <select id="add-when" title="When is it due?">
+        <option value="">No due date</option>
+        <option value="1h">In 1 hour</option>
+        <option value="tonight">Tonight 6 PM</option>
+        <option value="tomorrow">Tomorrow 9 AM</option>
+        <option value="monday">Monday 9 AM</option>
+        <option value="pick">Pick date &amp; time…</option>
+      </select>
+      <input id="add-at" type="datetime-local" hidden />
+      <button class="btn primary" type="submit">Add</button>
+    </form>
+
+    <div id="cols">
+      <section class="col">
+        <h2>To-dos</h2>
+        <div id="todos"></div>
+        <button id="show-done" class="link" hidden></button>
+        <div id="done" hidden></div>
+      </section>
+      <aside class="col">
+        <h2>Reply reminders</h2>
+        <div id="reminders"></div>
+        <h2>Scheduled messages</h2>
+        <div id="scheduled"></div>
+        <h2>Connections</h2>
+        <div class="card conn">
+          <div class="conn-top"><b>JobTread</b><span id="jt-state" class="pill"></span></div>
+          <p class="tip" id="jt-tip">In JobTread open <b>app.jobtread.com/grants</b>, create a grant key, copy it and paste it here.</p>
+          <div class="row" id="jt-row"><input id="jt-key" placeholder="JobTread grant key" autocomplete="off" /><button type="button" class="btn" data-paste="#jt-key">Paste</button><button type="button" class="btn primary" id="jt-save">Connect</button></div>
+          <button type="button" class="link" id="jt-off" hidden>Disconnect</button>
+          <div class="msg" id="jt-msg"></div>
+        </div>
+        <div class="card conn">
+          <div class="conn-top"><b>AI reply suggestions</b><span id="ai-state" class="pill"></span></div>
+          <p class="tip" id="ai-tip">Paste a Claude API key (console.anthropic.com → API Keys).</p>
+          <div class="row" id="ai-row"><input id="ai-key" placeholder="sk-ant-…" autocomplete="off" /><button type="button" class="btn" data-paste="#ai-key">Paste</button><button type="button" class="btn primary" id="ai-save">Save</button></div>
+          <button type="button" class="link" id="ai-off" hidden>Remove key</button>
+          <div class="msg" id="ai-msg"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <script src="tasks.js"></script>
+</body>
+</html>

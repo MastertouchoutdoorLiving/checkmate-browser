@@ -18,8 +18,15 @@ const UNREAD_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#f26b3a"/><path fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" d="M7 17l3-8h12l3 8v6H7z"/><path fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round" d="M7 17h5l1.5 2.5h5L20 17h5"/></svg>'
   )
 
+const TASKS_ICON =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#3a7bf2"/><path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M8 10.5l2 2 3.5-3.5M8 19.5l2 2 3.5-3.5M17 11h8M17 20h8"/></svg>'
+  )
+
 const CATALOG = [
   { name: 'Unread', url: 'internal:unread', icon: UNREAD_ICON },
+  { name: 'Tasks', url: 'internal:tasks', icon: TASKS_ICON },
   { name: 'iMessage', url: 'internal:imessage', icon: IMESSAGE_ICON },
   { name: 'Gmail', url: 'https://mail.google.com/' },
   { name: 'Google Calendar', url: 'https://calendar.google.com/' },
@@ -56,7 +63,7 @@ const CATALOG = [
 ]
 
 // Apps a new install (and a new space) starts with: the Master Touch team set.
-const DEFAULT_APPS = ['Unread', 'Gmail', 'Google Drive', 'JobTread', 'Schedulus', 'Quo', 'Heritage Pool Plus', 'ConstructCC', 'Proline', 'Horner Xpress', 'Pool360']
+const DEFAULT_APPS = ['Unread', 'Tasks', 'Gmail', 'Google Drive', 'JobTread', 'Schedulus', 'Quo', 'Heritage Pool Plus', 'ConstructCC', 'Proline', 'Horner Xpress', 'Pool360']
 
 const id = () => crypto.randomBytes(6).toString('hex')
 
