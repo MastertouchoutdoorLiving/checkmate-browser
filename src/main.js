@@ -22,6 +22,7 @@ const fs = require('fs')
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
 const contactParse = require('./imessage/contact-parse.js')
 const jobtread = require('./jobtread.js')
+const updater = require('./updater.js')
 const {
   installChromeWebStore,
   uninstallExtension,
@@ -142,7 +143,7 @@ function getRuntime(spaceId) {
     },
     selectTab: (wc) => {
       const tab = findTabByWebContents(wc)
-      if (tab) selectTab(tab.spaceId, tab.id)
+      if (tab && !rt.restoring) selectTab(tab.spaceId, tab.id)
     },
     removeTab: (wc) => {
       const tab = findTabByWebContents(wc)
@@ -307,6 +308,7 @@ function restoreTabs(spaceId) {
   const rt = getRuntime(spaceId)
   if (!rt || rt.restored) return
   rt.restored = true
+  rt.restoring = true
   const space = store.getSpace(spaceId)
   const saved = space.tabs || []
   const active = saved.find((t) => t.active) || saved[0]
@@ -316,6 +318,7 @@ function restoreTabs(spaceId) {
     const sleep = memorySaverOn() && t !== active && !keepAwakeUrl(normalizeUrl(t.url))
     createTab(spaceId, { url: t.url, appId: t.appId, select: false, persist: false, sleep })
   })
+  rt.restoring = false
   const activeTab = active && [...rt.tabs.values()].find((t) => t.url === active.url)
   if (activeTab) rt.activeTabId = activeTab.id
   else if (rt.order.length) rt.activeTabId = rt.order[0]
@@ -1533,6 +1536,7 @@ function buildAppMenu() {
             label: DISPLAY_NAME,
             submenu: [
               { role: 'about', label: `About ${DISPLAY_NAME}` },
+              { label: 'Check for Updates…', click: () => updater.check({ manual: true }) },
               { type: 'separator' },
               { role: 'services' },
               { type: 'separator' },
@@ -1754,6 +1758,7 @@ app.whenReady().then(() => {
   // Start every space's session in the background so extensions and notifications are ready.
   store.state.spaces.forEach((s) => getRuntime(s.id))
   setTimeout(startImessageWatcher, 3000)
+  updater.start(() => win)
   if (!store.state.settings.unreadAppAdded) {
     store.state.settings.unreadAppAdded = true
     const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]

@@ -1,0 +1,74 @@
+# Builds the Mac app on every change to main and publishes it as a GitHub Release.
+# Installed copies of CheckMate Browser check the latest release and update themselves.
+# A new release is made only when the version in package.json goes up.
+name: Build and release Mac app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Read version
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Already released?
+        id: chk
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.v.outputs.version }}" >/dev/null 2>&1; then
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.v.outputs.version }} is already released; bump the version in package.json to publish a new one."
+          fi
+
+      - name: Install
+        if: steps.chk.outputs.skip != '1'
+        run: npm ci --no-fund --no-audit
+
+      - name: Build the app (Apple chip and Intel)
+        if: steps.chk.outputs.skip != '1'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac dir --universal -c.mac.identity=null --publish never
+
+      - name: Package zip and dmg
+        if: steps.chk.outputs.skip != '1'
+        run: |
+          set -e
+          BUILT=$(ls -d dist/mac*/"MultiSpace Browser.app" | head -1)
+          mkdir -p out stage
+          cp -R "$BUILT" "stage/CheckMate Browser.app"
+          codesign --force --deep --sign - "stage/CheckMate Browser.app"
+          (cd stage && ditto -c -k --keepParent "CheckMate Browser.app" ../out/CheckMate-Browser-mac.zip)
+          ln -s /Applications stage/Applications
+          hdiutil create -volname "CheckMate Browser" -srcfolder stage -ov -format UDZO out/CheckMate-Browser.dmg
+          ls -lh out
+
+      - name: Publish release
+        if: steps.chk.outputs.skip != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          gh release create "v$V" out/CheckMate-Browser-mac.zip out/CheckMate-Browser.dmg \
+            --title "CheckMate Browser $V" \
+            --notes "Install: download CheckMate-Browser.dmg, open it and drag CheckMate Browser into Applications. Installed copies update themselves."

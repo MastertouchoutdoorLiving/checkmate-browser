@@ -1,7 +1,7 @@
 {
   "name": "multispace-browser",
   "productName": "MultiSpace Browser",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "CheckMate Browser: spaces, apps, iMessage and WhatsApp in one window",
   "main": "src/main.js",
   "scripts": {
@@ -48,5 +48,9 @@
       "title": "CheckMate Browser",
       "icon": "build/icon.png"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MastertouchoutdoorLiving/checkmate-browser.git"
   }
 }
