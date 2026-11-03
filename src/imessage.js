@@ -283,7 +283,21 @@ async function attachmentPath(id) {
 
 // ---------------------------------------------------------------- sending
 
-function osascript(lines, args) {
+// If the app (Contacts, Messages) isn't running, AppleScript fails with -600: open it in the background and try again.
+async function osascript(lines, args) {
+  for (let i = 0; ; i++) {
+    try {
+      return await osascriptOnce(lines, args)
+    } catch (err) {
+      const m = /(\w[\w ]*?) got an error: Application isn.t running|\(-60[09]\)/.exec(String(err.message))
+      const appName = (/(Contacts|Messages)/.exec(String(err.message)) || [])[1]
+      if (i >= 3 || !m || !appName) throw err
+      await new Promise((r) => execFile('/usr/bin/open', ['-g', '-j', '-a', appName], () => r()))
+      await new Promise((r) => setTimeout(r, 1500 + i * 1000))
+    }
+  }
+}
+function osascriptOnce(lines, args) {
   return new Promise((resolve, reject) => {
     const argv = []
     for (const l of lines) argv.push('-e', l)
