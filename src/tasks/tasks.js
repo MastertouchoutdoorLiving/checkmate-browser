@@ -487,11 +487,12 @@ function renderAppts() {
   if (!cal.connected) { box.innerHTML = '<div class="empty">Connect Google Calendar in Settings · Connections to see today\'s appointments here.</div>'; return }
   if (cal.error) { box.innerHTML = `<div class="empty">${esc(cal.error)}</div>`; return }
   if (!cal.events.length) { box.innerHTML = '<div class="empty">No appointments today.</div>'; return }
+  const warn = cal.publicOnly ? '<div class="card cal-warn">⚠️ Google only sends "Busy" because the calendar is connected with its <b>public</b> address. Click <b>Disconnect calendar</b> in Settings · Connections and paste the <b>Secret address in iCal format</b> instead (Google Calendar → Settings → your calendar → Integrate calendar). Then names, addresses and JobTread links show here.</div>' : ''
   const now = Date.now()
-  box.innerHTML = cal.events.map((ev) => `<div class="card fu appt ${!ev.allDay && ev.end < now ? 'past' : ''}" data-appt="${esc(ev.id)}">
+  box.innerHTML = warn + cal.events.map((ev) => `<div class="card fu appt ${!ev.allDay && ev.end < now ? 'past' : ''}" data-appt="${esc(ev.id)}">
     <span class="when">${esc(apptWhen(ev))}</span>
     <div class="body"><div class="t">${esc(ev.title)}</div>
-    <div class="s">${[ev.customer ? `<a data-appt-act="cust">👤 ${esc(ev.customer.name)}</a>` : '', ev.job ? `<a data-appt-act="job">🔨 ${esc(ev.job.name)}</a>` : '', esc(ev.location || (ev.customer || ev.job ? '' : 'Not found in JobTread')), sentOmw[ev.id] ? '✓ on-my-way sent' : ''].filter(Boolean).join(' · ')}</div></div>
+    <div class="s">${[ev.customer ? `<a data-appt-act="cust">👤 ${esc(ev.customer.name)}</a>` : '', ev.job ? `<a data-appt-act="job">🔨 ${esc(ev.job.name)}</a>` : '', esc(ev.location || (ev.customer || ev.job || cal.publicOnly ? '' : 'Not found in JobTread')), sentOmw[ev.id] ? '✓ on-my-way sent' : ''].filter(Boolean).join(' · ')}</div></div>
     ${ev.location ? '<button class="btn small" data-appt-act="map" title="Directions in Google Maps">🗺️</button>' : ''}
     ${ev.allDay ? '' : `<button class="btn small ${ev.phone ? 'primary' : ''}" data-appt-act="omw" title="${ev.phone ? 'Text the customer that you are on the way' : 'No phone found in the appointment or JobTread. You can type it.'}">🚗 On my way</button>`}</div>`).join('')
 }

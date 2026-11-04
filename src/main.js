@@ -1103,7 +1103,7 @@ function registerIpc() {
       const queue = [...events]
       await Promise.all([0, 1, 2].map(async () => { while (queue.length) { const ev = queue.shift(); Object.assign(ev, await linkEvent(key, ev) || {}) } }))
     }
-    const data = { connected: true, events }
+    const data = { connected: true, events, publicOnly: /\/public\/basic\.ics/.test(url) && events.length > 0 && events.every((x) => /^busy$/i.test(x.title)) }
     calCache = { url, day, at: Date.now(), data }
     return data
   })
@@ -1112,7 +1112,9 @@ function registerIpc() {
     url = String(url || '').trim().replace(/^webcal:/i, 'https:')
     calCache = null
     if (!url) { secretSet('cal', ''); return { connected: false, events: [] } }
-    await calendar.today(url) // checks the address works
+    if (/calendar\.google\.com\/calendar\/(embed|r\b)/.test(url)) throw new Error('That is the calendar\'s web link, not the iCal address. In Google Calendar → Settings → your calendar → Integrate calendar, copy the "Secret address in iCal format" (it ends in basic.ics).')
+    const evs = await calendar.today(url) // checks the address works
+    if (/\/public\/basic\.ics/.test(url) && evs.length && evs.every((x) => /^busy$/i.test(x.title))) throw new Error('That is the PUBLIC address, so Google only sends "Busy" with no names. Copy the "Secret address in iCal format" instead (it has "private-" in it and ends in basic.ics).')
     secretSet('cal', url)
     return { connected: true }
   })
