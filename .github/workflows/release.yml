@@ -80,6 +80,7 @@ jobs:
           BUILT=$(ls -d dist/mac*/"MultiSpace Browser.app" | head -1)
           mkdir -p out stage
           cp -R "$BUILT" "stage/CheckMate Browser.app"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "stage/CheckMate Browser.app/Contents/Info.plist"
           if codesign -dv "stage/CheckMate Browser.app" 2>&1 | grep -q "Authority=Developer ID"; then
             codesign --verify --deep --strict --verbose=2 "stage/CheckMate Browser.app"
             spctl -a -vv -t exec "stage/CheckMate Browser.app" || true
