@@ -1,7 +1,7 @@
 {
   "name": "multispace-browser",
   "productName": "MultiSpace Browser",
-  "version": "1.8.3",
+  "version": "1.8.4",
   "description": "CheckMate Browser: spaces, apps, iMessage and WhatsApp in one window",
   "main": "src/main.js",
   "scripts": {
@@ -35,7 +35,10 @@
       "artifactName": "CheckMate-Browser-${version}.${ext}",
       "icon": "build/icon.png",
       "extendInfo": {
-        "CFBundleDisplayName": "CheckMate Browser"
+        "CFBundleDisplayName": "CheckMate Browser",
+        "NSAppleEventsUsageDescription": "CheckMate uses Messages and Contacts to send your texts and save contacts.",
+        "NSMicrophoneUsageDescription": "CheckMate uses the microphone for dictation and calls in web apps.",
+        "NSCameraUsageDescription": "CheckMate uses the camera for video calls in web apps."
       }
     },
     "win": {

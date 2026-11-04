@@ -44,11 +44,34 @@ jobs:
         if: steps.chk.outputs.skip != '1'
         run: npm ci --no-fund --no-audit
 
+      # With an Apple Developer ID (repository secrets below) the app is signed and notarized,
+      # so Macs open it without the "Apple could not verify" warning. Without them it is ad-hoc signed.
+      #   MAC_CERT_P12_BASE64  Developer ID Application certificate (.p12), base64
+      #   MAC_CERT_PASSWORD    password of that .p12
+      #   APPLE_ID             Apple ID e-mail of the developer account
+      #   APPLE_APP_PASSWORD   app-specific password (appleid.apple.com → Sign-In and Security)
+      #   APPLE_TEAM_ID        10-character Team ID (developer.apple.com → Membership)
       - name: Build the app (Apple chip and Intel)
         if: steps.chk.outputs.skip != '1'
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --mac dir --universal -c.mac.identity=null --publish never
+          HAS_CERT: ${{ secrets.MAC_CERT_P12_BASE64 != '' }}
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ "$HAS_CERT" = "true" ]; then
+            echo "Signing with Developer ID and notarizing"
+            npx electron-builder --mac dir --universal --publish never \
+              -c.mac.hardenedRuntime=true -c.mac.gatekeeperAssess=false \
+              -c.mac.entitlements=build/entitlements.mac.plist -c.mac.entitlementsInherit=build/entitlements.mac.plist \
+              -c.mac.notarize=true
+          else
+            echo "No Developer ID secrets: ad-hoc signing (Macs will warn on first open)"
+            unset CSC_LINK CSC_KEY_PASSWORD
+            CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --mac dir --universal -c.mac.identity=null --publish never
+          fi
 
       - name: Package zip and dmg
         if: steps.chk.outputs.skip != '1'
@@ -57,7 +80,12 @@ jobs:
           BUILT=$(ls -d dist/mac*/"MultiSpace Browser.app" | head -1)
           mkdir -p out stage
           cp -R "$BUILT" "stage/CheckMate Browser.app"
-          codesign --force --deep --sign - "stage/CheckMate Browser.app"
+          if codesign -dv "stage/CheckMate Browser.app" 2>&1 | grep -q "Authority=Developer ID"; then
+            codesign --verify --deep --strict --verbose=2 "stage/CheckMate Browser.app"
+            spctl -a -vv -t exec "stage/CheckMate Browser.app" || true
+          else
+            codesign --force --deep --sign - "stage/CheckMate Browser.app"
+          fi
           (cd stage && ditto -c -k --keepParent "CheckMate Browser.app" ../out/CheckMate-Browser-mac.zip)
           ln -s /Applications stage/Applications
           hdiutil create -volname "CheckMate Browser" -srcfolder stage -ov -format UDZO out/CheckMate-Browser.dmg

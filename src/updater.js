@@ -70,7 +70,7 @@ async function promptRestart() {
   if (response === 0) installAndRelaunch(true)
 }
 
-// A small script waits for this app to close, swaps the new version in, re-signs it for this Mac, and opens it.
+// A small script waits for this app to close, swaps the new version in, re-signs it for this Mac if it isn't signed by Apple Developer ID, and opens it.
 function installAndRelaunch(relaunch, quit = true) {
   if (!ready) return
   const target = bundlePath()
@@ -82,7 +82,8 @@ while kill -0 ${process.pid} 2>/dev/null; do sleep 0.5; done
 rm -rf "${target}.old"
 mv "${target}" "${target}.old" || exit 1
 if ! cp -R "${ready.appPath}" "${target}"; then mv "${target}.old" "${target}"; exit 1; fi
-codesign --force --deep --sign - "${target}" >/dev/null 2>&1
+# keep a real (Developer ID) signature; only ad-hoc sign builds that have none
+codesign --verify --deep --strict "${target}" >/dev/null 2>&1 || codesign --force --deep --sign - "${target}" >/dev/null 2>&1
 xattr -dr com.apple.quarantine "${target}" >/dev/null 2>&1
 rm -rf "${target}.old"
 ${relaunch ? `open "${target}"` : ''}
