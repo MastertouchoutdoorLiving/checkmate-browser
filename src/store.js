@@ -24,7 +24,14 @@ const TASKS_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#3a7bf2"/><path fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" d="M8 10.5l2 2 3.5-3.5M8 19.5l2 2 3.5-3.5M17 11h8M17 20h8"/></svg>'
   )
 
+const TODAY_ICON =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#f2a33a"/><circle cx="16" cy="16" r="5" fill="#fff"/><path stroke="#fff" stroke-width="2.4" stroke-linecap="round" d="M16 5.5v2.6M16 23.9v2.6M5.5 16h2.6M23.9 16h2.6M8.6 8.6l1.8 1.8M21.6 21.6l1.8 1.8M8.6 23.4l1.8-1.8M21.6 10.4l1.8-1.8"/></svg>'
+  )
+
 const CATALOG = [
+  { name: 'Today', url: 'internal:today', icon: TODAY_ICON },
   { name: 'Unread', url: 'internal:unread', icon: UNREAD_ICON },
   { name: 'Tasks', url: 'internal:tasks', icon: TASKS_ICON },
   { name: 'iMessage', url: 'internal:imessage', icon: IMESSAGE_ICON },

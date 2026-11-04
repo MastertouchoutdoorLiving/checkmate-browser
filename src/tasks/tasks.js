@@ -561,3 +561,17 @@ $('#team-import').addEventListener('click', async () => {
   $('#team-msg').className = 'msg'
   try { const r = await window.imsg.teamImport(); if (r) { $('#team-msg').textContent = `Imported ✓ ${r.added} apps added, ${r.quickReplies} quick replies`; loadSend() } } catch (err) { $('#team-msg').className = 'msg err'; $('#team-msg').textContent = errText(err) }
 })
+
+// ---- Opened from "Today": show the Text box for a follow-up, or "On my way" for a visit
+window.imsg.onOpenItem(async (what, id) => {
+  if (what === 'followup') {
+    let x = allMoney().find((y) => y.id === id)
+    if (!x) { await loadMoney(); x = allMoney().find((y) => y.id === id) }
+    if (x) openSend(x)
+  }
+  if (what === 'omw') {
+    let ev = (cal.events || []).find((y) => y.id === id)
+    if (!ev) { await loadCal(); ev = (cal.events || []).find((y) => y.id === id) }
+    if (ev) openOmw(ev)
+  }
+})

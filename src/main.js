@@ -41,7 +41,8 @@ const imessage = require('./imessage')
 const IMESSAGE_URL = 'internal:imessage'
 const INBOX_URL = 'internal:unread'
 const TASKS_URL = 'internal:tasks'
-const isInternal = (url) => url === IMESSAGE_URL || url === INBOX_URL || url === TASKS_URL
+const TODAY_URL = 'internal:today'
+const isInternal = (url) => url === IMESSAGE_URL || url === INBOX_URL || url === TASKS_URL || url === TODAY_URL
 
 // The app is shown as "CheckMate Browser". Its internal name stays "MultiSpace Browser" on purpose:
 // that name picks the data folder and the Keychain key, so your logins and passwords carry over.
@@ -407,7 +408,7 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true, 
   win.contentView.addChildView(view)
   view.setVisible(false)
 
-  if (internal) view.webContents.loadFile(path.join(__dirname, tab.url === INBOX_URL ? 'inbox' : tab.url === TASKS_URL ? 'tasks' : 'imessage', 'index.html')).catch(() => {})
+  if (internal) view.webContents.loadFile(path.join(__dirname, tab.url === INBOX_URL ? 'inbox' : tab.url === TASKS_URL ? 'tasks' : tab.url === TODAY_URL ? 'today' : 'imessage', 'index.html')).catch(() => {})
   else if (tab.sleeping) {} // loads when you click it
   // Wait until the space's extensions are loaded so content scripts run on the first page.
   else Promise.resolve(rt.ready).finally(() => view.webContents.loadURL(tab.url).catch(() => {}))
@@ -1966,17 +1967,103 @@ function showTasks() {
 }
 // Settings: the JobTread and AI keys live in the Tasks app, under Connections.
 function showConnections() { showTasksAnd('tasks:show-conn') }
-function showTasksAnd(channel) {
+function showTasksAnd(channel, ...args) {
   showTasks()
   for (const rt of runtimes.values())
     for (const t of rt.tabs.values())
       if (t.url === TASKS_URL) {
-        const send = () => t.view.webContents.send(channel)
+        const send = () => t.view.webContents.send(channel, ...args)
         if (t.view.webContents.isLoading()) t.view.webContents.once('did-finish-load', () => setTimeout(send, 300))
         else send()
       }
 }
 ipcMain.handle('settings:open', (e) => { if (qrAllowed(e)) showConnections() })
+// ---- "Today": the summary of your day
+function showToday() {
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  for (const sp of store.state.spaces) {
+    const a = sp.apps.find((x) => x.url === TODAY_URL)
+    if (a) {
+      openApp(sp.id, a.id)
+      for (const t of getRuntime(sp.id).tabs.values()) if (t.appId === a.id && !t.view.webContents.isLoading()) t.view.webContents.send('today:refresh')
+      return
+    }
+  }
+  const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]
+  if (!sp) return
+  const a = store.addApp(sp.id, CATALOG.find((x) => x.url === TODAY_URL))
+  sp.apps.splice(sp.apps.indexOf(a), 1)
+  sp.apps.unshift(a)
+  store.save()
+  pushState()
+  openApp(sp.id, a.id)
+}
+// Open Tasks and ask it to open one item there (the "Text" box for a follow-up, "On my way" for a visit).
+ipcMain.on('today:open-tasks', (e, what, id) => {
+  if (!isInternalSender(e)) return
+  if (what === 'followup' || what === 'omw') showTasksAnd('tasks:open-item', what, String(id || ''))
+  else showTasks()
+})
+// Unread Gmail: Google's unread-inbox feed, read with each space's own Gmail sign-in (no extra login).
+let gmailCache = null
+function gmailSpaces() {
+  const out = []
+  for (const sp of store.state.spaces) {
+    const app = sp.apps.find((a) => hostOf(a.url) === 'mail.google.com')
+    const rt = runtimes.get(sp.id)
+    const tab = rt && [...rt.tabs.values()].find((t) => hostOf(t.url) === 'mail.google.com')
+    if (app || tab) out.push({ sp, app, tab })
+  }
+  return out
+}
+const xmlText = (s) => String(s || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&').trim()
+function parseGmailFeed(xml) {
+  const tag = (s, n) => { const m = s.match(new RegExp(`<${n}[^>]*>([\\s\\S]*?)</${n}>`)); return m ? xmlText(m[1]) : '' }
+  const head = xml.split('<entry>')[0]
+  const emails = xml.split('<entry>').slice(1).map((en) => {
+    const link = (en.match(/<link[^>]*href="([^"]+)"/) || [])[1] || ''
+    const mid = (xmlText(link).match(/message_id=([0-9a-f]+)/i) || [])[1] || ''
+    const author = (en.match(/<author>([\s\S]*?)<\/author>/) || [])[1] || ''
+    return { id: mid || tag(en, 'id'), messageId: mid, subject: tag(en, 'title') || '(no subject)', preview: tag(en, 'summary'), from: tag(author, 'name') || tag(author, 'email'), email: tag(author, 'email'), date: Date.parse(tag(en, 'issued') || tag(en, 'modified')) || 0 }
+  })
+  return { account: (tag(head, 'title').match(/[^\s]+@[^\s]+/) || [''])[0], count: Number(tag(head, 'fullcount')) || emails.length, emails }
+}
+ipcMain.handle('today:gmail', async (e, fresh) => {
+  if (!isInternalSender(e)) return []
+  if (!fresh && gmailCache && Date.now() - gmailCache.at < 90e3) return gmailCache.data
+  const data = await Promise.all(gmailSpaces().map(async ({ sp, app, tab }) => {
+    const base = { spaceId: sp.id, space: sp.name, appId: app ? app.id : null, tabId: tab ? tab.id : null }
+    try {
+      const rt = getRuntime(sp.id)
+      const res = await rt.session.fetch('https://mail.google.com/mail/u/0/feed/atom', { credentials: 'include', redirect: 'manual' })
+      if (res.status === 401 || res.status === 403 || (res.status >= 300 && res.status < 400)) return { ...base, state: 'signed-out', count: 0, emails: [] }
+      if (!res.ok) return { ...base, state: 'error', count: 0, emails: [] }
+      const xml = await res.text()
+      if (!/<feed/.test(xml)) return { ...base, state: 'signed-out', count: 0, emails: [] }
+      return { ...base, state: 'ok', ...parseGmailFeed(xml) }
+    } catch {
+      return { ...base, state: 'error', count: 0, emails: [] }
+    }
+  }))
+  gmailCache = { at: Date.now(), data }
+  return data
+})
+ipcMain.handle('today:open-gmail', (e, spaceId, messageId) => {
+  if (!isInternalSender(e)) return
+  const g = gmailSpaces().find((x) => x.sp.id === String(spaceId))
+  if (!g) return
+  const mid = /^[0-9a-f]{6,24}$/i.test(String(messageId || '')) ? String(messageId) : ''
+  const url = 'https://mail.google.com/mail/u/0/#inbox' + (mid ? '/' + mid : '')
+  const rt = getRuntime(g.sp.id)
+  if (store.state.activeSpaceId !== g.sp.id) activateSpace(g.sp.id)
+  let t = g.app ? [...rt.tabs.values()].find((x) => x.appId === g.app.id) : g.tab
+  if (!t) return createTab(g.sp.id, { url, appId: g.app ? g.app.id : null })
+  selectTab(g.sp.id, t.id)
+  if (t.sleeping) { t.url = url; wakeTab(t) } else t.view.webContents.loadURL(url).catch(() => {})
+})
 function fireTodo(t) {
   playAlertSound()
   if (!Notification.isSupported()) return
@@ -2310,12 +2397,12 @@ function buildAppMenu() {
               { label: 'Check for Updates…', click: () => updater.check({ manual: true }) },
               { label: 'Settings: JobTread & AI Keys…', accelerator: 'CmdOrCtrl+,', click: showConnections },
               { label: 'Search JobTread…', accelerator: 'CmdOrCtrl+K', click: () => showTasksAnd('tasks:search') },
-              { label: 'Morning Summary', click: () => showTasksAnd('tasks:summary') },
+              { label: 'Today: Summary of My Day', accelerator: 'CmdOrCtrl+Shift+T', click: showToday },
               { label: 'Let Claude Control This Browser', type: 'checkbox', checked: control.isOn(), click: toggleClaudeControl },
               { label: 'Export Team Setup…', click: () => teamExportFn && teamExportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup saved', detail: `${r.apps} apps and ${r.quickReplies} quick replies were saved to:\n${r.file}\n\nSend this file to your team. No keys or passwords are in it.` })).catch((err) => dialog.showErrorBox('Export failed', err.message)) },
               { label: 'Import Team Setup…', click: () => teamImportFn && teamImportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup imported', detail: `${r.added} apps added and ${r.quickReplies} quick replies imported.` })).catch((err) => dialog.showErrorBox('Import failed', err.message)) },
               {
-                label: 'Show Morning Summary When I Start',
+                label: 'Show Today When I Start',
                 type: 'checkbox',
                 checked: store.state.settings.morningSummary !== false,
                 click: (mi) => { store.state.settings.morningSummary = mi.checked; store.save() },
@@ -2542,15 +2629,20 @@ app.whenReady().then(() => {
   store.state.spaces.forEach((s) => getRuntime(s.id))
   setTimeout(startImessageWatcher, 3000)
   updater.start(() => win)
-  // Morning summary: the first time you open the browser each day, show Tasks with today's list.
-  {
-    const today = new Date().toDateString()
-    if (store.state.settings.morningSummary !== false && store.state.settings.lastSummaryDay !== today) {
-      store.state.settings.lastSummaryDay = today
+  // "Today": every time you open the browser, start on the summary of your day
+  // (unread messages, visits, tasks and follow-ups). Turn off in the CheckMate menu.
+  if (!store.state.settings.todayAppAdded) {
+    store.state.settings.todayAppAdded = true
+    const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]
+    if (sp && !sp.apps.some((a) => a.url === TODAY_URL)) {
+      const a = store.addApp(sp.id, CATALOG.find((x) => x.url === TODAY_URL))
+      sp.apps.splice(sp.apps.indexOf(a), 1)
+      sp.apps.unshift(a)
       store.save()
-      setTimeout(() => showTasksAnd('tasks:summary'), 3500)
+      pushState()
     }
   }
+  if (store.state.settings.morningSummary !== false) setTimeout(showToday, 1500)
   if (!store.state.settings.tasksAppAdded) {
     store.state.settings.tasksAppAdded = true
     const sp = store.state.spaces.find((x) => x.id === store.state.activeSpaceId) || store.state.spaces[0]

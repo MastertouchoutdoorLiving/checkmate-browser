@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:" />
+<title>Today</title>
+<link rel="stylesheet" href="today.css" />
+</head>
+<body>
+  <div id="wrap">
+    <header>
+      <div>
+        <h1 id="hello">Good morning ☀️</h1>
+        <div id="date"></div>
+      </div>
+      <div class="head-acts">
+        <button class="btn" id="refresh" title="Refresh everything">↻ Refresh</button>
+        <button class="btn" id="open-tasks">Open Tasks</button>
+      </div>
+    </header>
+    <div id="stats"></div>
+
+    <div id="grid">
+      <div class="col">
+        <section class="card box" id="box-visits">
+          <h2>📍 Visits today <span class="n" id="n-visits"></span></h2>
+          <div id="visits"><div class="empty">Loading…</div></div>
+        </section>
+        <section class="card box" id="box-unread">
+          <h2>💬 Unread messages <span class="n" id="n-unread"></span></h2>
+          <div class="filters" id="u-filters"></div>
+          <div id="unread"><div class="empty">Loading…</div></div>
+          <div id="waiting-wrap" hidden>
+            <h3>Waiting for your answer (24h+)</h3>
+            <div id="waiting"></div>
+          </div>
+        </section>
+      </div>
+      <div class="col">
+        <section class="card box" id="box-due">
+          <h2>✅ Due today <span class="n" id="n-due"></span></h2>
+          <div id="due"><div class="empty">Loading…</div></div>
+        </section>
+        <section class="card box" id="box-fu">
+          <h2>💰 Follow-ups <span class="n" id="n-fu"></span></h2>
+          <div id="fu"><div class="empty">Loading…</div></div>
+        </section>
+      </div>
+    </div>
+    <p class="foot">This page opens every time you start CheckMate. Turn it off in the CheckMate menu → Show Today When I Start.</p>
+  </div>
+  <script src="today.js"></script>
+</body>
+</html>

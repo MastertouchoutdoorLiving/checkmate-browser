@@ -55,6 +55,10 @@ Add **iMessage** from **+ Add app**. It shows your conversations and lets you re
 
 The browser plays a beep and shows a Mac notification when a new iMessage comes in, even when the iMessage app isn't open. Clicking the notification opens that conversation. Turn either one off with the bell next to **Inbox**, or in the **Messages** menu. No alert is shown for the conversation you're already reading.
 
+## Today (summary of your day)
+
+Every time CheckMate starts it opens **Today**: today's visits from Google Calendar (with 🗺️ directions and 🚗 On my way), unread messages from iMessage, WhatsApp, Gmail and other apps, what is due today (your to-dos, JobTread tasks, reply reminders) and money to follow up (estimates and overdue invoices). Click any line to open it. Gmail emails are read from Gmail's unread feed with the space's own Google sign-in. Turn it off in the CheckMate menu → Show Today When I Start; open it any time with Cmd+Shift+T.
+
 ## Unread (everything in one list)
 
 The **Unread** app (first in the apps panel) shows every unread conversation in one place:
