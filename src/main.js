@@ -25,6 +25,7 @@ const contactParse = require('./imessage/contact-parse.js')
 const jobtread = require('./jobtread.js')
 const quo = require('./quo.js')
 const calendar = require('./calendar.js')
+const control = require('./control.js')
 let teamExportFn = null, teamImportFn = null
 const updater = require('./updater.js')
 const {
@@ -2273,6 +2274,29 @@ async function startImessageWatcher() {
   setInterval(checkNewImessages, 5000)
 }
 
+function claudeControlCtx() {
+  return {
+    userData: app.getPath('userData'),
+    runtimes,
+    activeSpaceId: () => store.state.activeSpaceId,
+    openUrl: (spaceId, url) => createTab(spaceId, { url }).id,
+    selectTab,
+  }
+}
+if (process.env.MULTISPACE_TEST_CONTROL) app.whenReady().then(() => setTimeout(() => control.start(claudeControlCtx()), 2500))
+async function toggleClaudeControl() {
+  try {
+    if (control.isOn()) control.stop()
+    else {
+      const r = await control.start(claudeControlCtx())
+      dialog.showMessageBox(win, { type: 'info', message: 'Claude can now control this browser', detail: `Only on this Mac, only until you switch it off or quit ${DISPLAY_NAME}. Claude can open pages, read them and click in your websites (not the iMessage, Unread or Tasks pages).\n\nIt turns itself off when you quit.` })
+    }
+  } catch (e) {
+    dialog.showErrorBox('Could not change this setting', e.message)
+  }
+  buildAppMenu()
+}
+
 function buildAppMenu() {
   const send = (channel, ...args) => () => win && win.webContents.send(channel, ...args)
   const isMac = process.platform === 'darwin'
@@ -2287,6 +2311,7 @@ function buildAppMenu() {
               { label: 'Settings: JobTread & AI Keys…', accelerator: 'CmdOrCtrl+,', click: showConnections },
               { label: 'Search JobTread…', accelerator: 'CmdOrCtrl+K', click: () => showTasksAnd('tasks:search') },
               { label: 'Morning Summary', click: () => showTasksAnd('tasks:summary') },
+              { label: 'Let Claude Control This Browser', type: 'checkbox', checked: control.isOn(), click: toggleClaudeControl },
               { label: 'Export Team Setup…', click: () => teamExportFn && teamExportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup saved', detail: `${r.apps} apps and ${r.quickReplies} quick replies were saved to:\n${r.file}\n\nSend this file to your team. No keys or passwords are in it.` })).catch((err) => dialog.showErrorBox('Export failed', err.message)) },
               { label: 'Import Team Setup…', click: () => teamImportFn && teamImportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup imported', detail: `${r.added} apps added and ${r.quickReplies} quick replies imported.` })).catch((err) => dialog.showErrorBox('Import failed', err.message)) },
               {
@@ -2553,6 +2578,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', (e) => {
+  control.stop()
   if (quitting) return
   e.preventDefault() // finish writing logins to disk first, then quit
   quitGracefully()
