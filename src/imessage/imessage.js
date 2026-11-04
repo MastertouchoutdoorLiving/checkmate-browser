@@ -412,11 +412,11 @@ async function loadMessages(chat, scroll = true) {
 // photos and videos show inline; other files show as a chip you can open in Finder
 function attachmentHtml(a) {
   const src = `imsg-att://file/${Number(a.id)}`
-  if (/^image\//.test(a.mime)) return `<img class="att-img" src="${src}" data-att="${Number(a.id)}" alt="${esc(a.name)}" loading="lazy" />`
-  if (/^video\//.test(a.mime)) return `<video class="att-video" src="${src}" controls preload="metadata"></video>`
+  if (/^image\//.test(a.mime)) return `<img class="att-img" src="${src}" data-att="${Number(a.id)}" alt="${esc(a.name)}" loading="lazy" draggable="true" />`
+  if (/^video\//.test(a.mime)) return `<video class="att-video" src="${src}" data-att="${Number(a.id)}" data-kind="video" draggable="true" controls preload="metadata"></video>`
   if (/^audio\//.test(a.mime)) return `<audio class="att-audio" src="${src}" controls preload="none"></audio>`
   const kb = a.size ? (a.size > 1e6 ? (a.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(a.size / 1e3)) + ' KB') : ''
-  return `<button class="att-file" data-reveal="${Number(a.id)}">📎 <span>${esc(a.name || 'File')}</span>${kb ? ` <small>${kb}</small>` : ''}</button>`
+  return `<button class="att-file" data-reveal="${Number(a.id)}" data-att="${Number(a.id)}" data-kind="file" data-name="${esc(a.name || 'File')}" draggable="true" title="Click: show in Finder · Drag onto ✓ JobTread at the top to file it on the job">📎 <span>${esc(a.name || 'File')}</span>${kb ? ` <small>${kb}</small>` : ''}</button>`
 }
 $('#messages').addEventListener('click', (e) => {
   const img = e.target.closest('img[data-att]')
@@ -610,8 +610,10 @@ document.addEventListener('keydown', (e) => {
   setTimeout(() => lastPasteAt < at && pasteFromBrowser(), 250)
 })
 let dragDepth = 0
+const ATT_TYPE = 'application/x-checkmate-att' // our own drag: a picture/file from a message
 $('#convo').addEventListener('dragenter', (e) => {
-  if (!current || ![...(e.dataTransfer?.types || [])].includes('Files')) return
+  const types = [...(e.dataTransfer?.types || [])]
+  if (!current || !types.includes('Files') || types.includes(ATT_TYPE)) return
   dragDepth++
   $('#convo').classList.add('dragging')
 })
@@ -626,6 +628,7 @@ $('#convo').addEventListener('drop', (e) => {
   e.preventDefault()
   dragDepth = 0
   $('#convo').classList.remove('dragging')
+  if ([...(e.dataTransfer?.types || [])].includes(ATT_TYPE)) return // a picture from this chat dragged and let go elsewhere
   if (current) addFiles([...e.dataTransfer.files])
 })
 
@@ -935,12 +938,14 @@ $('#messages').addEventListener('contextmenu', (e) => {
   const row = e.target.closest('.row[data-mid]')
   const c = currentChat()
   if (!row || !c || String(window.getSelection() || '').trim()) return // keep the normal copy menu when text is selected
-  const pic = e.target.closest('img[data-att]')
+  const pic = e.target.closest('[data-att]')
   if (pic) {
     e.preventDefault()
     const id = Number(pic.dataset.att)
+    const isPic = pic.tagName === 'IMG'
+    const what = isPic ? 'picture' : pic.dataset.kind === 'video' ? 'video' : 'file'
     const menu = $('#ctx')
-    menu.innerHTML = `<button data-a="save">⬇︎ Save picture…</button><button data-a="copy">Copy picture</button>${jt.connected ? '<button data-a="jt">🔨 Send to JobTread</button>' : ''}<button data-a="finder">Show in Finder</button>`
+    menu.innerHTML = `${jt.connected ? `<button data-a="jt">🔨 Send ${what} to JobTread job…</button>` : ''}<button data-a="save">⬇︎ Save ${what}…</button>${isPic ? '<button data-a="copy">Copy picture</button>' : ''}<button data-a="finder">Show in Finder</button>`
     menu.style.left = Math.min(e.clientX, innerWidth - 220) + 'px'
     menu.style.top = Math.min(e.clientY, innerHeight - 160) + 'px'
     menu.hidden = false
@@ -949,7 +954,7 @@ $('#messages').addEventListener('contextmenu', (e) => {
       menu.hidden = true
       if (a === 'save') savePic(id)
       if (a === 'copy') copyPic(id)
-      if (a === 'jt') jtPhoto(id)
+      if (a === 'jt') jtPhoto(id, what)
       if (a === 'finder') window.imsg.revealAttachment(id)
     }
     return
@@ -1337,11 +1342,17 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('#jt-card [data-url]')
   if (b) window.imsg.jtOpen(b.dataset.url)
 })
-async function jtPhoto(attId) {
+// what: 'picture' | 'video' | 'file'. Opens the picker with the conversation's job already chosen.
+async function jtPhoto(attId, what = 'picture', files) {
   const c = currentChat()
   if (!c) return
   $('#lightbox').hidden = true
   const m = $('#jt-photo')
+  const n = files ? files.length : 1
+  const isPics = files ? files.every((f) => /^image\//.test(f.type)) : what === 'picture'
+  $('#jtp-title').textContent = n > 1 ? `Send ${n} files to JobTread` : `Send ${files ? (isPics ? 'picture' : 'file') : what} to JobTread`
+  $('#jtp-sub').textContent = isPics ? 'Saved in the Photos folder of the job you pick.' : 'Saved in the Files folder of the job you pick.'
+  $('#jtp-hint').hidden = true
   const sel = $('#jtp-target')
   $('#jtp-msg').textContent = 'Looking up the customer…'
   $('#jtp-msg').className = ''
@@ -1355,7 +1366,13 @@ async function jtPhoto(attId) {
   sel.innerHTML = jobs.map((j) => `<option value="job:${esc(j.id)}">Job ${j.number ? '#' + esc(j.number) + ' · ' : ''}${esc(j.name)}${j.closed ? ' (closed)' : ''}</option>`).join('') +
     `<option value="account:${esc(d.id)}">Customer files · ${esc(d.name)}</option>`
   const L = await jtLinkOf(c).catch(() => null)
-  if (L && jobs.some((j) => j.id === L.jobId)) sel.value = 'job:' + L.jobId
+  const sug = jtSuggest(d, L)
+  if (sug) {
+    sel.value = 'job:' + sug.job.id
+    sel.querySelector(`option[value="job:${CSS.escape(sug.job.id)}"]`)?.prepend('★ ')
+    $('#jtp-hint').textContent = `★ Suggested: ${sug.why}`
+    $('#jtp-hint').hidden = false
+  }
   $('#jtp-msg').textContent = ''
   $('#jtp-send').disabled = false
   $('#jtp-send').onclick = async () => {
@@ -1363,9 +1380,11 @@ async function jtPhoto(attId) {
     $('#jtp-send').disabled = true
     $('#jtp-msg').textContent = 'Sending…'
     try {
-      await window.imsg.jtUploadAtt({ targetType, targetId }, attId)
+      if (files) await jtUploadFiles({ targetType, targetId }, files)
+      else await window.imsg.jtUploadAtt({ targetType, targetId }, attId)
       m.hidden = true
-      toast('Picture sent to JobTread')
+      const j = jobs.find((x) => x.id === targetId)
+      toast(`Sent to ${targetType === 'job' && j ? jobText({ jobNumber: j.number, jobName: j.name }) : 'the customer in JobTread'}`)
     } catch (err) {
       $('#jtp-msg').className = 'err'
       $('#jtp-msg').textContent = errMsg(err)
@@ -1374,6 +1393,63 @@ async function jtPhoto(attId) {
   }
 }
 $('#jtp-cancel').addEventListener('click', () => ($('#jt-photo').hidden = true))
+// Which job a picture most likely belongs to: the job linked to this chat, or the only open job
+// of the customer whose number matches (the green "✓ JobTread" at the top).
+function jtSuggest(d, L) {
+  if (!d) return null
+  const open = d.jobs.filter((j) => !j.closed)
+  const linked = L && d.jobs.find((j) => j.id === L.jobId)
+  if (linked) return { job: linked, why: `this chat is linked to ${jobText(L)}` }
+  if (open.length === 1) return { job: open[0], why: `the only open job for ${d.name}` }
+  return null
+}
+async function jtUploadFiles(t, files) {
+  for (const f of files) await window.imsg.jtUploadFile(t, { name: f.name, mime: f.type, bytes: new Uint8Array(await f.arrayBuffer()) })
+}
+
+// Drag a picture/file from a message (or from Finder) onto the "✓ JobTread" chip at the top.
+// With a job already linked it goes straight there; otherwise the picker opens with a suggestion.
+$('#messages').addEventListener('dragstart', (e) => {
+  const el = e.target.closest && e.target.closest('[data-att]')
+  if (!el || !jt.connected) return
+  e.dataTransfer.setData(ATT_TYPE, JSON.stringify({ id: Number(el.dataset.att), what: el.tagName === 'IMG' ? 'picture' : el.dataset.kind || 'file' }))
+  e.dataTransfer.effectAllowed = 'copy'
+  const chip = $('#chat-job')
+  if (!chip.hidden) chip.classList.add('drop-ready')
+})
+$('#messages').addEventListener('dragend', () => $('#chat-job').classList.remove('drop-ready', 'drop-over'))
+const chipDrag = (e) => {
+  const types = [...(e.dataTransfer?.types || [])]
+  return jt.connected && (types.includes(ATT_TYPE) || types.includes('Files'))
+}
+$('#chat-job').addEventListener('dragenter', (e) => { if (chipDrag(e)) { e.preventDefault(); e.stopPropagation(); $('#chat-job').classList.add('drop-over') } })
+$('#chat-job').addEventListener('dragover', (e) => { if (chipDrag(e)) { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy' } })
+$('#chat-job').addEventListener('dragleave', () => $('#chat-job').classList.remove('drop-over'))
+$('#chat-job').addEventListener('drop', async (e) => {
+  if (!chipDrag(e)) return
+  e.preventDefault()
+  e.stopPropagation()
+  $('#chat-job').classList.remove('drop-ready', 'drop-over')
+  dragDepth = 0
+  $('#convo').classList.remove('dragging')
+  const c = currentChat()
+  if (!c) return
+  let att = null
+  try { att = JSON.parse(e.dataTransfer.getData(ATT_TYPE) || 'null') } catch {}
+  const files = att ? null : [...e.dataTransfer.files]
+  if (!att && !files.length) return
+  const L = await jtLinkOf(c).catch(() => null)
+  if (!L) return jtPhoto(att ? att.id : 0, att ? att.what : 'file', files)
+  const label = att ? att.what : files.length > 1 ? `${files.length} files` : /^image\//.test(files[0].type) ? 'picture' : 'file'
+  toast(`Sending ${label} to ${jobText(L)}…`)
+  try {
+    if (att) await window.imsg.jtUploadAtt({ targetType: 'job', targetId: L.jobId }, att.id)
+    else await jtUploadFiles({ targetType: 'job', targetId: L.jobId }, files)
+    toast(`✓ Sent to ${jobText(L)}`)
+  } catch (err) {
+    toast(errMsg(err))
+  }
+})
 
 
 // ---- 🎤 dictation (the Mac's own Dictation) and ✨ AI reply suggestion

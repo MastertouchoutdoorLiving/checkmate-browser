@@ -82,7 +82,8 @@ The **Save contact** form (iMessage and WhatsApp) has an **Also add to JobTread*
 - **Remind me to reply:** ⏰ in the iMessage conversation header, or **⏰ Remind me** in WhatsApp. Pick 1 hour, 3 hours, tomorrow 9 AM or Monday 9 AM. At that time it beeps, shows a notification, and clicking it opens the conversation.
 - **Send later (iMessage):** write the message, click the clock next to Send and pick when. Scheduled messages show above the message box, where you can cancel them. The browser has to be open at that time; if it was closed, the message goes out when you open it again.
 - **JobTread card:** with JobTread connected, the iMessage details panel shows the customer, address and jobs (found by phone, email or name). Click to open in JobTread.
-- **Pictures to JobTread:** in iMessage click a picture → **Send to JobTread**. In WhatsApp right-click a picture → **Send picture to JobTread…**. Pick the job; it goes in the job's Photos folder.
+- **Pictures and files to JobTread:** right-click a picture, video or file (PDF…) in iMessage or WhatsApp → **Send … to JobTread job…**. The job is picked for you (★ Suggested: the job linked to the chat, or the customer's only open job). Pictures go in the job's Photos folder, other files in Files.
+- **Drag to the job:** in iMessage drag a picture or file from a message (or from Finder) onto the green **✓ JobTread** chip at the top of the chat; with a job linked it is sent straight there. In WhatsApp drag onto the **🔨** button that appears while you drag. A document you download in WhatsApp asks "Send this file to JobTread?" with the job already chosen.
 - **✨ Suggest reply:** writes a short reply from the conversation (and improves your draft if you started one). Needs a Claude API key from console.anthropic.com, pasted once.
 - **🎤 Dictate:** uses the Mac's own Dictation (turn it on in System Settings → Keyboard → Dictation).
 

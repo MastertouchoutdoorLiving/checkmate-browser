@@ -810,6 +810,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
   }, 1000)
 }
 
+let waJtPick = null, waJtUpload = null // set below on WhatsApp; used by the 🔨 JobTread button for drops
 // ---------------------------------------------------------------- WhatsApp: send a picture to JobTread
 // Right-click a picture → "Send picture to JobTread…". Finds the customer by this chat's phone/name.
 if (location.hostname === 'web.whatsapp.com' && window.top === window) {
@@ -841,6 +842,8 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       img{max-width:100%;max-height:160px;border-radius:8px;display:block;margin:0 auto 10px}
       select{width:100%;border:1px solid #d1d7db;border-radius:8px;padding:7px;font-size:13px}
       .m{min-height:18px;margin:8px 0;color:#667781}.m.err{color:#d93025}
+      .h{font-size:12.5px;color:#2f5297;background:#eef3fd;border-radius:8px;padding:6px 9px;margin-top:8px}
+      .f{white-space:pre-line;font-size:13px;margin:0 0 10px;word-break:break-all}.f:empty{display:none}
       .a{display:flex;justify-content:flex-end;gap:8px}
       .a button{border:0;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer}
       .go{background:#00a884;color:#fff}.no{background:#f0f2f5}
@@ -848,41 +851,64 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     </style>
     <div class="bg" hidden><div class="card">
       <h3>Send picture to JobTread</h3><p>Saved in the Photos folder of the job you pick.</p>
-      <img alt=""/><select></select><div class="m"></div>
+      <img alt=""/><div class="f"></div><select></select><div class="h" hidden></div><div class="m"></div>
       <div class="a"><button class="no">Cancel</button><button class="go">Send</button></div>
     </div></div>`
     proot.querySelector('.no').addEventListener('click', () => (proot.querySelector('.bg').hidden = true))
     for (const ev of ['keydown', 'keypress', 'keyup']) proot.addEventListener(ev, (e) => e.stopPropagation())
     document.body.appendChild(phost)
   }
-  ipcRenderer.on('jt:photo', async (_e, src) => {
+  // item: { src } (a picture/video in the chat), { files } (dropped from Finder) or { download } (a document just saved).
+  // The job linked to this chat (or the customer's only open job) is chosen for you.
+  async function pick(item) {
     ensureP()
     const bg = proot.querySelector('.bg')
     const sel = proot.querySelector('select')
     const msg = proot.querySelector('.m')
     const go = proot.querySelector('.go')
-    proot.querySelector('img').src = src
+    const img = proot.querySelector('img')
+    const files = item.files || []
+    const isImg = item.src ? !/video/i.test(item.mime || '') : files.length ? files.every((f) => /^image\//.test(f.type)) : /^image\//.test(item.download.mime)
+    proot.querySelector('h3').textContent = item.download ? 'Send this file to JobTread?' : files.length > 1 ? `Send ${files.length} files to JobTread` : `Send ${item.src ? (item.mime && /video/.test(item.mime) ? 'video' : 'picture') : isImg ? 'picture' : 'file'} to JobTread`
+    proot.querySelector('p').textContent = item.download ? `“${item.download.name}” was saved to your Mac. File it on the job too?` : `Saved in the ${isImg ? 'Photos' : 'Files'} folder of the job you pick.`
+    img.hidden = !(item.src && isImg) && !(files.length === 1 && isImg)
+    if (item.src) img.src = item.src
+    else if (files.length === 1 && isImg) img.src = URL.createObjectURL(files[0])
+    proot.querySelector('.f').textContent = item.download ? '📎 ' + item.download.name : files.length && !isImg ? files.map((f) => '📎 ' + f.name).join('\n') : ''
+    proot.querySelector('.no').textContent = item.download ? 'Not now' : 'Cancel'
     sel.innerHTML = ''
+    proot.querySelector('.h').hidden = true
     msg.className = 'm'
     msg.textContent = 'Looking up the customer…'
     go.disabled = true
     bg.hidden = false
     const info = chatInfo()
-    let d = null
+    let d = null, L = null
     try {
       d = await ipcRenderer.invoke('jt:find', { phone: info.phone, name: /^\+?[\d\s()-]{7,}$/.test(info.title) ? '' : info.title })
+      L = info.title ? await ipcRenderer.invoke('jt:link-get', 'wa:' + info.title).catch(() => null) : null
     } catch (err) {
       msg.className = 'm err'
       msg.textContent = errT(err)
       return
     }
-    if (!d) {
-      msg.textContent = 'This chat is not a JobTread customer yet. Use 👤 Save contact with "Also add to JobTread" first.'
+    const jobs = d ? [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)] : []
+    if (L && !jobs.some((j) => j.id === L.jobId)) jobs.unshift({ id: L.jobId, name: L.jobName, number: L.jobNumber })
+    if (!d && !L) {
+      msg.textContent = 'This chat is not a JobTread customer yet. Use 👤 Save contact with "Also add to JobTread" first, or link a job in ⚡ Tools → 🔨 JobTread.'
       return
     }
-    const jobs = [...d.jobs.filter((j) => !j.closed), ...d.jobs.filter((j) => j.closed)]
     sel.innerHTML = jobs.map((j) => `<option value="job:${esc2(j.id)}">Job ${j.number ? '#' + esc2(j.number) + ' · ' : ''}${esc2(j.name)}${j.closed ? ' (closed)' : ''}</option>`).join('') +
-      `<option value="account:${esc2(d.id)}">Customer files · ${esc2(d.name)}</option>`
+      (d ? `<option value="account:${esc2(d.id)}">Customer files · ${esc2(d.name)}</option>` : '')
+    const open = jobs.filter((j) => !j.closed)
+    const sug = L ? { id: L.jobId, why: `this chat is linked to ${L.jobNumber ? '#' + L.jobNumber + ' ' : ''}${L.jobName}` } : open.length === 1 ? { id: open[0].id, why: `the only open job for ${d.name}` } : null
+    if (sug) {
+      sel.value = 'job:' + sug.id
+      const o = sel.querySelector(`option[value="job:${CSS.escape(sug.id)}"]`)
+      if (o) o.textContent = '★ ' + o.textContent
+      proot.querySelector('.h').textContent = '★ Suggested: ' + sug.why
+      proot.querySelector('.h').hidden = false
+    }
     msg.textContent = ''
     go.disabled = false
     go.onclick = async () => {
@@ -890,12 +916,12 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       msg.className = 'm'
       msg.textContent = 'Sending…'
       try {
-        const blob = await (await fetch(src)).blob()
-        const bytes = new Uint8Array(await blob.arrayBuffer())
-        const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg')
         const [targetType, targetId] = sel.value.split(':')
-        const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')
-        await ipcRenderer.invoke('jt:upload', { targetType, targetId }, { name: `WhatsApp ${stamp}.${ext}`, mime: blob.type || 'image/jpeg', bytes })
+        await upload({ targetType, targetId }, item, info.title)
+        // remember the job for this chat, so the next drop on 🔨 goes straight there
+        const j = jobs.find((x) => x.id === targetId)
+        if (targetType === 'job' && j && info.title && (!L || L.jobId !== j.id))
+          await ipcRenderer.invoke('jt:link-set', 'wa:' + info.title, { jobId: j.id, jobName: j.name, jobNumber: String(j.number || ''), status: j.status || '', accountId: (d && d.id) || '', auto: false }).catch(() => {})
         msg.textContent = '✓ Sent to JobTread'
         setTimeout(() => (bg.hidden = true), 1200)
       } catch (err) {
@@ -904,6 +930,30 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
         go.disabled = false
       }
     }
+  }
+  async function upload(t, item, title) {
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')
+    if (item.download) return ipcRenderer.invoke('jt:upload-download', t, item.download.id)
+    if (item.files) {
+      for (const f of item.files) await ipcRenderer.invoke('jt:upload-file', t, { name: f.name, mime: f.type, bytes: new Uint8Array(await f.arrayBuffer()) })
+      return
+    }
+    const blob = await (await fetch(item.src)).blob()
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    const mime = blob.type || (/video/.test(item.mime || '') ? 'video/mp4' : 'image/jpeg')
+    const ext = (mime.split('/')[1] || 'jpg').replace('jpeg', 'jpg').replace('quicktime', 'mov')
+    return ipcRenderer.invoke('jt:upload-file', t, { name: `WhatsApp ${title ? title + ' ' : ''}${stamp}.${ext}`.slice(0, 120), mime, bytes })
+  }
+  waJtPick = pick
+  waJtUpload = upload
+  ipcRenderer.on('jt:photo', (_e, src) => {
+    // a video's srcURL ends up here too; check what the element under the mouse was
+    const isVid = !!document.querySelector(`video[src="${CSS.escape(src)}"]`)
+    pick({ src, mime: isVid ? 'video/mp4' : 'image/jpeg' })
+  })
+  ipcRenderer.on('jt:downloaded', (_e, dl) => {
+    if (!dl || !dl.id || !document.querySelector('#main footer')) return
+    pick({ download: { id: String(dl.id), name: String(dl.name || 'File'), mime: String(dl.mime || '') } })
   })
 }
 
@@ -1297,6 +1347,7 @@ function jtPhonePanel(opts) {
       [hidden]{display:none!important}
       .fab{position:fixed;z-index:2147483646;${opts.fabCss};border:1px solid #cfdcf5;background:#eef3fd;color:#2f5297;border-radius:20px;padding:8px 14px;font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.15);cursor:pointer;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .fab:hover{background:#e2eafb}
+      .fab.drop{outline:2px dashed #3a5fa8;outline-offset:2px}.fab.over{background:#3a5fa8;color:#fff}
       .pn{position:fixed;z-index:2147483647;width:350px;max-height:calc(100vh - 140px);${opts.panelCss};overflow-y:auto;background:#fff;border:1px solid #e2d9cc;border-radius:16px;box-shadow:0 14px 40px rgba(0,0,0,.25);padding:14px;color:#2b2620;font-size:13px}
       h3{margin:0 0 2px;font-size:15px;padding-right:20px}
       .sub{color:#8a8075;font-size:12px;margin-bottom:8px}
@@ -1322,6 +1373,7 @@ function jtPhonePanel(opts) {
     root.querySelector('.fab').onclick = () => { st.open = !st.open; if (st.open && st.customer === undefined) lookup(); draw() }
     root.querySelector('.x').onclick = () => { st.open = false; draw() }
     wire()
+    wireDrop(root.querySelector('.fab'))
   }
 
   async function lookup(manual) {
@@ -1363,9 +1415,12 @@ function jtPhonePanel(opts) {
   function draw() {
     ensure()
     const fab = root.querySelector('.fab'), pn = root.querySelector('.pn'), box = root.querySelector('.in')
-    const show = !!st.ctx && opts.visible()
+    const flash = st.flashUntil > Date.now() ? st.flashText : ''
+    const show = !!st.ctx && (opts.visible() || st.drag || !!flash)
     fab.hidden = !show
-    if (show) fab.textContent = st.link ? `🔨 ${jobText(st.link)}` : '🔨 JobTread'
+    if (show) fab.textContent = flash ? flash : st.drag ? (st.link ? `⬇︎ Drop to send to ${jobText(st.link)}` : '⬇︎ Drop here to send to JobTread') : st.link ? `🔨 ${jobText(st.link)}` : '🔨 JobTread'
+    fab.classList.toggle('drop', !!st.drag)
+    fab.classList.toggle('over', !!st.dragOver)
     pn.hidden = !show || !st.open
     if (pn.hidden) return
     const typing = root.activeElement && /^(INPUT|TEXTAREA)$/.test(root.activeElement.tagName)
@@ -1465,6 +1520,51 @@ function jtPhonePanel(opts) {
     })
   }
 
+  // Drag a picture from the chat, or files from Finder, onto the 🔨 button: it shows up while you drag.
+  const dragOk = (e) => { const t = [...((e.dataTransfer && e.dataTransfer.types) || [])]; return t.includes('Files') || t.includes('text/uri-list') }
+  let dragT = null
+  const dragOn = () => { clearTimeout(dragT); if (!st.drag && st.ctx) { st.drag = true; draw() } }
+  const dragOff = () => { clearTimeout(dragT); dragT = setTimeout(() => { if (st.drag) { st.drag = false; st.dragOver = false; draw() } }, 250) }
+  window.addEventListener('dragstart', (e) => { const t = e.target; if (t && t.tagName === 'IMG' && /^blob:/.test(t.src || '')) dragOn() }, true)
+  window.addEventListener('dragenter', (e) => { if (dragOk(e)) dragOn() }, true)
+  window.addEventListener('dragover', (e) => { if (dragOk(e)) dragOn() }, true)
+  window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) dragOff() }, true)
+  window.addEventListener('dragend', dragOff, true)
+  window.addEventListener('drop', dragOff, true)
+  function wireDrop(fab) {
+    fab.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); st.dragOver = true; fab.classList.add('over') })
+    fab.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'copy'; dragOn() })
+    fab.addEventListener('dragleave', () => { st.dragOver = false; fab.classList.remove('over') })
+    fab.addEventListener('drop', async (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      st.drag = false
+      st.dragOver = false
+      const files = [...e.dataTransfer.files]
+      const uri = (e.dataTransfer.getData('text/uri-list') || '').split('\n').map((x) => x.trim()).find((x) => /^blob:/.test(x)) || ''
+      const item = files.length ? { files } : uri ? { src: uri, mime: 'image/jpeg' } : null
+      draw()
+      if (!item) return
+      if (st.key) st.link = (await ipcRenderer.invoke('jt:link-get', st.key).catch(() => null)) || st.link // may have been set by the picker
+      const link = st.link && st.link.jobId ? st.link : null
+      if (!link) {
+        if (opts.pick) return opts.pick(item)
+        st.open = true
+        if (st.customer === undefined) lookup()
+        return say('Pick the job for this conversation below, then drop it again.', 'err')
+      }
+      const tell = (t, ms) => { st.flashText = t; st.flashUntil = Date.now() + ms; draw(); setTimeout(draw, ms + 50) }
+      tell(`Sending to ${jobText(link)}…`, 60000)
+      try {
+        if (opts.upload) await opts.upload({ targetType: 'job', targetId: link.jobId }, item, st.ctx && st.ctx.title)
+        else for (const f of files) await ipcRenderer.invoke('jt:upload-file', { targetType: 'job', targetId: link.jobId }, { name: f.name, mime: f.type, bytes: new Uint8Array(await f.arrayBuffer()) })
+        tell(`✓ Sent to ${jobText(link)}`, 3000)
+      } catch (e2) {
+        tell('⚠️ ' + err(e2), 8000)
+      }
+    })
+  }
+
   // auto photos: new incoming pictures in the open chat
   const sentKey = '__ms_jt_sent_photos'
   let sent
@@ -1545,6 +1645,8 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       return { title, phone, name: /^\+?[\d\s()-]{7,}$/.test(title) ? '' : title, recent: readWa() }
     },
     keyOf: (c) => 'wa:' + c.title,
+    pick: (item) => waJtPick && waJtPick(item),
+    upload: (t, item, title) => waJtUpload(t, item, title),
     autoPhotos: () => {
       const main = document.querySelector('#main')
       if (!main) return []

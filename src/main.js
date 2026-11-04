@@ -20,6 +20,8 @@ const {
 const { pathToFileURL, fileURLToPath } = require('url')
 const path = require('path')
 const fs = require('fs')
+const crypto = require('crypto')
+const jtDownloads = new Map() // id -> { path, name, mime, wcId }: WhatsApp downloads the page may file on JobTread
 const { ElectronChromeExtensions } = require('electron-chrome-extensions')
 const contactParse = require('./imessage/contact-parse.js')
 const jobtread = require('./jobtread.js')
@@ -214,10 +216,22 @@ function getRuntime(spaceId) {
   })
   exts(ses).on('extension-unloaded', () => pushState())
 
-  ses.on('will-download', (_e, item) => {
+  ses.on('will-download', (_e, item, wc) => {
     // Use the default Chrome-like behaviour: ask where to save.
     item.once('done', (_ev, state) => {
-      if (state === 'completed') shell.showItemInFolder(item.getSavePath())
+      if (state !== 'completed') return
+      // A document saved from WhatsApp: offer to file it on the chat's JobTread job too.
+      let fromWa = false
+      try { fromWa = !!wc && !wc.isDestroyed() && hostOf(wc.getURL()) === 'web.whatsapp.com' } catch {}
+      if (fromWa && jtKey()) {
+        const id = crypto.randomBytes(8).toString('hex')
+        const name = path.basename(item.getSavePath())
+        jtDownloads.set(id, { path: item.getSavePath(), name, mime: item.getMimeType() || 'application/octet-stream', wcId: wc.id })
+        if (jtDownloads.size > 30) jtDownloads.delete(jtDownloads.keys().next().value)
+        wc.send('jt:downloaded', { id, name, mime: item.getMimeType() || '' })
+        return
+      }
+      shell.showItemInFolder(item.getSavePath())
     })
   })
 
@@ -1254,9 +1268,34 @@ function registerIpc() {
     const key = jtKey()
     if (!key) throw new Error('JobTread is not connected yet.')
     const a = await imessage.attachmentFile(Number(attId))
-    const bytes = fs.readFileSync(a.file || a.path)
-    const name = String(a.name || path.basename(a.file || a.path || 'Photo.jpg')).replace(/\.(heic|heif|tiff?)$/i, '.jpg')
-    return jobtread.uploadFile(key, { ...jtTarget(t), name, mime: a.mime && !/heic|heif|tiff/i.test(a.mime) ? a.mime : 'image/jpeg', bytes })
+    const src = a.file || a.path
+    const bytes = fs.readFileSync(src)
+    let orig = ''
+    try { orig = path.basename(await imessage.attachmentPath(Number(attId))) } catch {}
+    const isImg = /^image\//.test(a.mime || '')
+    let name = String(orig || path.basename(src || 'Photo.jpg'))
+    if (isImg && path.extname(src).toLowerCase() === '.jpg' && !/\.jpe?g$/i.test(name)) name = name.replace(/\.[^.]+$/, '') + '.jpg' // HEIC was converted
+    const mime = isImg ? (/heic|heif|tiff/i.test(a.mime) ? 'image/jpeg' : a.mime) : a.mime || 'application/octet-stream'
+    return jobtread.uploadFile(key, { ...jtTarget(t), name: name.slice(0, 120), mime, bytes, folder: isImg ? 'Photos' : 'Files' })
+  })
+  // A file dropped from Finder (or a picture/document read by the page): bytes + name, filed by type.
+  ipcMain.handle('jt:upload-file', (e, t, file) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    const f = file || {}
+    const mime = String(f.mime || '').slice(0, 100) || 'application/octet-stream'
+    return jobtread.uploadFile(key, { ...jtTarget(t), name: String(f.name || 'File').slice(0, 120), mime, bytes: f.bytes, folder: /^image\//.test(mime) ? 'Photos' : 'Files' })
+  })
+  // A file just downloaded from WhatsApp (a document someone sent): the page only gets an id, never a path.
+  ipcMain.handle('jt:upload-download', (e, t, id) => {
+    if (!qrAllowed(e)) throw new Error('Not allowed')
+    const key = jtKey()
+    if (!key) throw new Error('JobTread is not connected yet.')
+    const d = jtDownloads.get(String(id))
+    if (!d || d.wcId !== e.sender.id) throw new Error('That download is gone. Download it again.')
+    const bytes = fs.readFileSync(d.path)
+    return jobtread.uploadFile(key, { ...jtTarget(t), name: d.name.slice(0, 120), mime: d.mime, bytes, folder: /^image\//.test(d.mime) ? 'Photos' : 'Files' })
   })
   // Clipboard text for the "Paste" buttons next to our key boxes.
   ipcMain.handle('clip:text', async (e) => (qrAllowed(e) ? String((await clipboard.readText()) || '') : ''))
@@ -1753,8 +1792,8 @@ function showContextMenu(tab, params) {
       { type: 'separator' }
     )
   }
-  if (params.mediaType === 'image' && params.srcURL && hostOf(tab.url) === 'web.whatsapp.com' && jtKey()) {
-    items.push({ label: 'Send picture to JobTread…', click: () => wc.send('jt:photo', params.srcURL) }, { type: 'separator' })
+  if ((params.mediaType === 'image' || params.mediaType === 'video') && params.srcURL && hostOf(tab.url) === 'web.whatsapp.com' && jtKey()) {
+    items.push({ label: params.mediaType === 'video' ? 'Send video to JobTread job…' : 'Send picture to JobTread job…', click: () => wc.send('jt:photo', params.srcURL) }, { type: 'separator' })
   }
   if (params.isEditable) items.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { type: 'separator' })
   else if (params.selectionText) items.push({ role: 'copy' }, { type: 'separator' })

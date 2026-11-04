@@ -337,6 +337,12 @@ html, body { overflow: hidden; }
 #chat-job:hover { background: #e2eafb; }
 #chat-job.pick { background: var(--card); border-style: dashed; color: var(--muted); }
 #chat-job .st { opacity: .75; }
+#chat-job.drop-ready *, #chat-job.drop-over * { pointer-events: none; }
+#chat-job.drop-ready { outline: 2px dashed #3a5fa8; outline-offset: 2px; }
+#chat-job.drop-over { background: #3a5fa8; color: #fff; outline: 2px solid #3a5fa8; }
+#chat-job.drop-over .jt-yes, #chat-job.drop-over .st { color: #fff; }
+#jtp-hint { font-size: 12.5px; color: #2f5297; background: #eef3fd; border-radius: 8px; padding: 6px 9px; margin-top: 8px; }
+.att-file[draggable], .att-img { -webkit-user-drag: element; }
 #jt-menu { position: fixed; z-index: 15; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 10px 30px rgba(60, 40, 20, .16); width: 320px; max-height: 70vh; overflow-y: auto; }
 #jt-menu .jm-h { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; padding: 6px 10px 4px; }
 #jt-menu button { display: flex; gap: 8px; align-items: center; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 8px; font-size: 13px; }
