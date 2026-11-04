@@ -11,6 +11,7 @@ It runs on Chromium (through Electron), so sites behave the way they do in Chrom
 - **Apps aren't tabs.** Apps you pin open in their own place when you click them in the apps panel and stay loaded in the background; the tab strip only shows other websites you open. Cmd+W never closes an app.
 - **Apps per space.** Pin web apps (Gmail, Calendar, Drive, Slack, WhatsApp, Outlook, QuickBooks, or any URL) in the panel next to the spaces. Clicking an app jumps to its tab, or opens it if it isn't open yet.
 - **Let Claude control this browser.** CheckMate Browser menu → *Let Claude Control This Browser*. Off by default and never remembered: it turns itself off when you quit. While on, a local-only port (127.0.0.1) accepts requests with a secret token stored in a file only your Mac user can read, so Claude can list tabs, open pages, read text, click and take screenshots. The iMessage, Unread and Tasks pages are never exposed.
+- **To-do from WhatsApp.** In a WhatsApp chat, open ⚡ Tools → ✅ To-do, type the task (it starts with the contact's name), pick a due date if you want, and it appears on your Tasks page.
 - **Drag a tab to save it.** Drag any tab from the top strip onto the apps panel and drop it where you want it. The tab becomes a saved app (rename it with ✎).
 - **Unread badges.** Counts are read from page titles like `Inbox (12)`, then shown on the app, the tab, the space icon, and the dock/taskbar icon.
 - **Tabs and an address bar** that work like Chrome's: search or type a URL, back/forward/reload, middle-click to close a tab.

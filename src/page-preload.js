@@ -772,9 +772,20 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       .menu button{display:block;width:100%;text-align:left;border:0;background:none;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:13px}
       .menu button:hover{background:#f0f2f5}
       .ok{position:fixed;right:24px;bottom:260px;z-index:2147483647;background:#111b21;color:#fff;border-radius:10px;padding:8px 12px;font-size:13px}
+      .tb{bottom:304px}
+      .tp{position:fixed;right:24px;bottom:348px;z-index:2147483647;width:300px;background:#fff;border:1px solid #d1d7db;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:10px;font-size:13px;color:#111b21}
+      .tp b{display:block;font-size:12px;color:#667781;padding:0 2px 6px}
+      .tp textarea{width:100%;min-height:58px;border:1px solid #d1d7db;border-radius:8px;padding:8px;font:13px -apple-system,system-ui,sans-serif;resize:vertical;color:#111b21;background:#fff}
+      .tp select{width:100%;margin-top:6px;padding:7px;border:1px solid #d1d7db;border-radius:8px;font-size:13px;background:#fff;color:#111b21}
+      .tp .go{margin-top:8px;width:100%;border:0;border-radius:8px;background:#00a884;color:#fff;font-weight:600;padding:9px;cursor:pointer;font-size:13px}
       [hidden]{display:none!important}
     </style>
     <button class="btn" hidden>⏰ Remind me</button>
+    <button class="btn tb" hidden>✅ To-do</button>
+    <div class="tp" hidden><b>New to-do (goes to your Tasks page)</b>
+      <textarea class="tx" placeholder="What needs to be done?"></textarea>
+      <select class="td"><option value="">No due date</option><option value="today5">Today 5:00 PM</option><option value="tom9">Tomorrow 9:00 AM</option><option value="mon9">Monday 9:00 AM</option></select>
+      <button class="go">Add to-do</button></div>
     <div class="menu" hidden><b>Remind me to reply</b>
       <button data-w="1h">In 1 hour</button><button data-w="3h">In 3 hours</button>
       <button data-w="tom9">Tomorrow 9:00 AM</button><button data-w="mon9">Monday 9:00 AM</button></div>
@@ -797,16 +808,52 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
       ok.hidden = false
       setTimeout(() => (ok.hidden = true), 2500)
     })
+    const tp = rroot.querySelector('.tp')
+    const tx = rroot.querySelector('.tx')
+    rroot.querySelector('.tb').addEventListener('click', () => {
+      tp.hidden = !tp.hidden
+      if (!tp.hidden) {
+        const name = chatTitle()
+        tx.value = name ? `${name}: ` : ''
+        tx.focus()
+        tx.setSelectionRange(tx.value.length, tx.value.length)
+      }
+    })
+    const addTodo = async () => {
+      const text = tx.value.trim()
+      if (!text) return
+      const w = rroot.querySelector('.td').value
+      let due = null
+      if (w === 'today5') { const d = new Date(); d.setHours(17, 0, 0, 0); due = +d }
+      else if (w) due = at(w)
+      try {
+        await ipcRenderer.invoke('todos:add', { text, due })
+        ok.textContent = '✅ Added to your Tasks page'
+        tp.hidden = true
+      } catch (err) {
+        ok.textContent = String((err && err.message) || err).replace(/^Error invoking remote method '[^']*': (Error: )?/, '')
+      }
+      ok.hidden = false
+      setTimeout(() => (ok.hidden = true), 2500)
+    }
+    rroot.querySelector('.go').addEventListener('click', addTodo)
+    tx.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTodo() }
+    })
     document.addEventListener('mousedown', (e) => {
-      if (!menu.hidden && !e.composedPath().includes(rhost)) menu.hidden = true
+      const inside = e.composedPath().includes(rhost)
+      if (!menu.hidden && !inside) menu.hidden = true
+      if (!tp.hidden && !inside) tp.hidden = true
     }, true)
     document.body.appendChild(rhost)
   }
   setInterval(() => {
     if (!document.body) return
     ensureR()
-    rroot.querySelector('.btn').hidden = !document.querySelector('#main footer') || !waTools.open
-    if (!waTools.open) rroot.querySelector('.menu').hidden = true
+    const showB = !document.querySelector('#main footer') || !waTools.open
+    rroot.querySelector('.btn').hidden = showB
+    rroot.querySelector('.tb').hidden = showB
+    if (!waTools.open) { rroot.querySelector('.menu').hidden = true; rroot.querySelector('.tp').hidden = true }
   }, 1000)
 }
 
@@ -981,7 +1028,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
   function draw() {
     const t = troot.querySelector('.t')
     t.textContent = waTools.open ? '✕ Hide tools' : '⚡ Tools'
-    t.title = waTools.open ? 'Hide JobTread, Remind me, Quick replies and Save contact' : 'Show JobTread, Remind me, Quick replies and Save contact'
+    t.title = waTools.open ? 'Hide JobTread, Remind me, To-do, Quick replies and Save contact' : 'Show JobTread, Remind me, To-do, Quick replies and Save contact'
   }
   setInterval(() => {
     if (!document.body) return
@@ -1628,7 +1675,7 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
     hostId: '__ms_wa_jt',
     source: 'WhatsApp',
     fabCss: 'right:24px;bottom:260px',
-    panelCss: 'right:24px;bottom:304px;max-height:calc(100vh - 320px)',
+    panelCss: 'right:24px;bottom:348px;max-height:calc(100vh - 364px)',
     notFoundTip: 'Use "Save contact" (with "Also add to JobTread") to add them, or find their job below.',
     visible: () => waTools.open && !!document.querySelector('#main footer'),
     ctx: () => {
