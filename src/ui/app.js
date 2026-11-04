@@ -62,11 +62,11 @@ ${esc(a.url)}">
     .join('')
 
   // Tabs: only websites you opened yourself. Apps live in the apps panel, not in the tab strip.
-  $('#tabs').innerHTML = space.tabs
+  if (!dragging) $('#tabs').innerHTML = space.tabs
     .filter((t) => !t.appId)
     .map(
       (t) => `
-      <div class="tab ${t.id === space.activeTabId ? 'active' : ''} ${t.appId ? 'app-tab' : ''}" data-id="${t.id}" title="${esc(t.title)}">
+      <div draggable="true" class="tab ${t.id === space.activeTabId ? 'active' : ''} ${t.appId ? 'app-tab' : ''}" data-id="${t.id}" title="${esc(t.title)}">
         ${t.loading ? '<span class="spinner"></span>' : t.favicon ? `<img src="${esc(t.favicon)}" alt="" />` : '<span class="ph"></span>'}
         <span class="title">${esc(t.title || t.url)}</span>
         ${t.badge > 0 ? badgeHtml(t.badge) : ''}
@@ -183,6 +183,61 @@ function enableReorder(listSel, itemSel, onDone) {
   list.addEventListener('dragend', finish)
 }
 enableReorder('#apps', '.app', (ids) => api.reorderApps(activeSpace().id, ids))
+
+// Drag a tab from the top strip onto the apps panel to save it as an app (at the spot you drop it).
+let tabDrag = null
+$('#tabs').addEventListener('dragstart', (e) => {
+  const t = e.target.closest('.tab')
+  if (!t) return
+  tabDrag = Number(t.dataset.id)
+  dragging = { list: '#tabs', id: t.dataset.id }
+  t.classList.add('dragging')
+  document.body.classList.add('tab-dragging')
+  e.dataTransfer.effectAllowed = 'copyMove'
+  e.dataTransfer.setData('text/plain', String(tabDrag))
+})
+$('#tabs').addEventListener('dragend', () => {
+  tabDrag = null
+  if (dragging && dragging.list === '#tabs') dragging = null
+  document.body.classList.remove('tab-dragging')
+  $('#apps-panel').classList.remove('drop-target')
+  document.querySelectorAll('.drop-line').forEach((el) => el.remove())
+  render()
+})
+function tabDropIndex(e) {
+  const items = [...$('#apps').querySelectorAll('.app')]
+  const i = items.findIndex((el) => { const r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 })
+  return i === -1 ? items.length : i
+}
+$('#apps-panel').addEventListener('dragover', (e) => {
+  if (tabDrag == null) return
+  e.preventDefault()
+  e.dataTransfer.dropEffect = 'copy'
+  $('#apps-panel').classList.add('drop-target')
+  const items = [...$('#apps').querySelectorAll('.app')]
+  const i = tabDropIndex(e)
+  let line = document.querySelector('.drop-line')
+  if (!line) { line = document.createElement('li'); line.className = 'drop-line' }
+  $('#apps').insertBefore(line, items[i] || null)
+})
+$('#apps-panel').addEventListener('dragleave', (e) => {
+  if (tabDrag == null || $('#apps-panel').contains(e.relatedTarget)) return
+  $('#apps-panel').classList.remove('drop-target')
+  document.querySelectorAll('.drop-line').forEach((el) => el.remove())
+})
+$('#apps-panel').addEventListener('drop', (e) => {
+  if (tabDrag == null) return
+  e.preventDefault()
+  const space = activeSpace()
+  const t = space.tabs.find((x) => x.id === tabDrag)
+  const index = tabDropIndex(e)
+  tabDrag = null
+  if (!t || !t.url || t.url === 'about:blank') return
+  let name = (t.title || '').trim()
+  if (!name || /^https?:/.test(name)) { try { name = new URL(t.url).hostname.replace(/^www\./, '') } catch { name = t.url } }
+  if (name.length > 40) name = name.slice(0, 38).trim() + '…'
+  api.addApp(space.id, { name, url: t.url, fromTabId: t.id, index })
+})
 enableReorder('#spaces', '.space', (ids) => api.reorderSpaces(ids))
 
 // ------------------------------------------------------------------ events

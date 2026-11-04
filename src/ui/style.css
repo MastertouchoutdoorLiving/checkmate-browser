@@ -175,7 +175,10 @@ browser-action-list::part(action):hover { background-color: var(--panel-hover); 
 #panel-resizer:hover, body.resizing #panel-resizer { background: var(--accent); opacity: .5; }
 body.resizing, body.resizing * { cursor: col-resize !important; user-select: none; }
 body.apps-hidden #panel-resizer { display: none; }
-.app.dragging, .space.dragging { opacity: .4; }
+.app.dragging, .space.dragging, .tab.dragging { opacity: .4; }
+body.tab-dragging #apps-panel { outline: 2px dashed var(--accent, #3b82f6); outline-offset: -4px; }
+#apps-panel.drop-target { background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent); }
+.drop-line { list-style: none; height: 3px; margin: 2px 8px; border-radius: 2px; background: var(--accent, #3b82f6); pointer-events: none; }
 .app[draggable=true] { cursor: grab; }
 /* mac: keep the window buttons clear of the space name */
 body.darwin #space-header { padding-left: 30px; }

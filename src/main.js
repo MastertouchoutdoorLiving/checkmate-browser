@@ -1575,6 +1575,20 @@ function registerIpc() {
     if (!a) return
     // Saving the page you're on: turn the current tab into the app instead of opening a duplicate.
     const rt = runtimes.get(spaceId)
+    // Dragged a tab from the top strip onto the apps panel: that tab becomes the app, at the drop position.
+    const dragged = rt && Number.isInteger(entry.fromTabId) ? rt.tabs.get(entry.fromTabId) : null
+    if (Number.isInteger(entry.index)) {
+      const s = store.getSpace(spaceId)
+      const ids = s.apps.map((x) => x.id).filter((x) => x !== a.id)
+      ids.splice(Math.max(0, Math.min(entry.index, ids.length)), 0, a.id)
+      store.reorder(s.apps, ids)
+    }
+    if (dragged && !dragged.appId) {
+      dragged.appId = a.id
+      persistTabs(spaceId)
+      pushState()
+      return
+    }
     const cur = rt && rt.tabs.get(rt.activeTabId)
     if (entry.fromCurrentTab && cur && !cur.appId) {
       cur.appId = a.id
