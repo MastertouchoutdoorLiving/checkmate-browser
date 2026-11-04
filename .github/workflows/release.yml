@@ -80,7 +80,10 @@ jobs:
           BUILT=$(ls -d dist/mac*/"MultiSpace Browser.app" | head -1)
           mkdir -p out stage
           cp -R "$BUILT" "stage/CheckMate Browser.app"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "stage/CheckMate Browser.app/Contents/Info.plist"
+          NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "stage/CheckMate Browser.app/Contents/Info.plist")
+          echo "CFBundleName=$NAME"
+          # Electron looks for "<CFBundleName> Helper.app"; if the names differ the app crashes at launch.
+          test -d "stage/CheckMate Browser.app/Contents/Frameworks/$NAME Helper.app" || { echo "ERROR: helper app for '$NAME' not found"; ls "stage/CheckMate Browser.app/Contents/Frameworks"; exit 1; }
           if codesign -dv "stage/CheckMate Browser.app" 2>&1 | grep -q "Authority=Developer ID"; then
             codesign --verify --deep --strict --verbose=2 "stage/CheckMate Browser.app"
             spctl -a -vv -t exec "stage/CheckMate Browser.app" || true
