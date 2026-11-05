@@ -10,7 +10,7 @@
   <div id="wrap">
     <header>
       <h1>Tasks</h1>
-      <div id="stats"></div>
+      <div class="head-r"><div id="stats"></div><button type="button" class="btn" id="open-settings">⚙ Settings</button></div>
     </header>
 
     <div id="search-wrap">
@@ -55,7 +55,12 @@
         <div id="reminders"></div>
         <h2>Scheduled messages</h2>
         <div id="scheduled"></div>
-        <h2 id="conn">Settings · Connections</h2>
+      </aside>
+    </div>
+  </div>
+  <div id="settings-bg" hidden></div>
+  <aside id="settings-panel" hidden>
+    <div class="sp-head"><h2 id="conn">Settings</h2><button type="button" class="btn small" id="close-settings">Close</button></div>
         <div class="card conn">
           <div class="conn-top"><b>JobTread</b><span id="jt-state" class="pill"></span></div>
           <p class="tip" id="jt-tip">In JobTread open <b>app.jobtread.com/grants</b>, create a grant key, copy it and paste it here.</p>
@@ -101,9 +106,7 @@
           <div class="row"><button type="button" class="btn" id="team-export">Export…</button><button type="button" class="btn" id="team-import">Import…</button></div>
           <div class="msg" id="team-msg"></div>
         </div>
-      </aside>
-    </div>
-  </div>
+  </aside>
   <div id="send-modal" hidden>
     <form class="card sheet" id="send-form">
       <h3 id="sm-title">Text the customer</h3>

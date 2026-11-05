@@ -77,11 +77,14 @@ jobs:
         if: steps.chk.outputs.skip != '1'
         run: |
           set -e
-          BUILT=$(ls -d dist/mac*/"MultiSpace Browser.app" | head -1)
+          BUILT=$(ls -d dist/mac*/*.app | head -1)
           mkdir -p out stage
           cp -R "$BUILT" "stage/CheckMate Browser.app"
           NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleName" "stage/CheckMate Browser.app/Contents/Info.plist")
-          echo "CFBundleName=$NAME"
+          EXE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "stage/CheckMate Browser.app/Contents/Info.plist")
+          echo "CFBundleName=$NAME EXE=$EXE"
+          # The menu bar shows CFBundleName, so it must say CheckMate Browser.
+          test "$NAME" = "CheckMate Browser" || { echo "ERROR: CFBundleName is '$NAME'"; exit 1; }
           # Electron looks for "<CFBundleName> Helper.app"; if the names differ the app crashes at launch.
           test -d "stage/CheckMate Browser.app/Contents/Frameworks/$NAME Helper.app" || { echo "ERROR: helper app for '$NAME' not found"; ls "stage/CheckMate Browser.app/Contents/Frameworks"; exit 1; }
           if codesign -dv "stage/CheckMate Browser.app" 2>&1 | grep -q "Authority=Developer ID"; then
@@ -93,7 +96,7 @@ jobs:
           # Smoke test: really start the packaged app. A launch crash (like "Unable to find helper app") gives a non-zero exit and stops the release.
           echo "Smoke test: launching the packaged app"
           rm -rf "$RUNNER_TEMP/smoke"
-          MULTISPACE_SMOKE=1 perl -e 'alarm 120; exec @ARGV' "stage/CheckMate Browser.app/Contents/MacOS/MultiSpace Browser" "--user-data-dir=$RUNNER_TEMP/smoke" || { echo "ERROR: the packaged app crashed or did not start"; exit 1; }
+          MULTISPACE_SMOKE=1 perl -e 'alarm 120; exec @ARGV' "stage/CheckMate Browser.app/Contents/MacOS/$EXE" "--user-data-dir=$RUNNER_TEMP/smoke" || { echo "ERROR: the packaged app crashed or did not start"; exit 1; }
           echo "Smoke test passed"
           (cd stage && ditto -c -k --keepParent "CheckMate Browser.app" ../out/CheckMate-Browser-mac.zip)
           ln -s /Applications stage/Applications

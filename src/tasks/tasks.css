@@ -131,3 +131,10 @@ details.tpl { margin-top: 8px; }
   .btn.primary { color: #fff; }
   .fu-tab.on { color: #1b1916; }
 }
+
+/* ---- Settings drawer */
+.head-r { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#settings-bg { position: fixed; inset: 0; background: rgba(20, 16, 12, .35); z-index: 40; }
+#settings-panel { position: fixed; top: 0; right: 0; bottom: 0; width: min(520px, 100vw); z-index: 41; background: var(--bg); border-left: 1px solid var(--line2); box-shadow: -12px 0 40px rgba(20, 16, 12, .25); overflow-y: auto; padding: 18px 18px 40px; }
+.sp-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.sp-head h2 { margin: 0; font-size: 20px; text-transform: none; letter-spacing: 0; color: var(--text); }

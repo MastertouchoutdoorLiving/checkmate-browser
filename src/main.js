@@ -1045,7 +1045,7 @@ function registerIpc() {
     const via = m.via === 'quo' ? 'quo' : 'imessage'
     if (via === 'quo') {
       const key = secretGet('quo')
-      if (!key) throw new Error('Quo is not connected yet. Add your Quo API key in Settings · Connections.')
+      if (!key) throw new Error('Quo is not connected yet. Add your Quo API key in Settings (Tasks → ⚙ Settings).')
       await quo.send(key, { from: (store.state.settings.quoCfg || {}).from, to, content: text })
     } else {
       if (process.platform !== 'darwin' && !process.env.MULTISPACE_TEST_CHATDB) throw new Error('iMessage only works on a Mac. Pick Quo.')
@@ -2445,7 +2445,7 @@ function buildAppMenu() {
             submenu: [
               { role: 'about', label: `About ${DISPLAY_NAME}` },
               { label: 'Check for Updates…', click: () => updater.check({ manual: true }) },
-              { label: 'Settings: JobTread & AI Keys…', accelerator: 'CmdOrCtrl+,', click: showConnections },
+              { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: showConnections },
               { label: 'Search JobTread…', accelerator: 'CmdOrCtrl+K', click: () => showTasksAnd('tasks:search') },
               { label: 'Today: Summary of My Day', accelerator: 'CmdOrCtrl+Shift+T', click: showToday },
               { label: 'Appearance', submenu: [['system', 'Match My Mac'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => ({ label: l, type: 'radio', checked: (store.state.settings.theme || 'system') === v, click: () => { store.state.settings.theme = v; store.save(); nativeTheme.themeSource = v } })) },

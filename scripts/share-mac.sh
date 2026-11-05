@@ -3,7 +3,7 @@
 # It works on every Mac (Apple chip and Intel). Send the .dmg by Google Drive, WhatsApp, email…
 set -e
 cd "$(dirname "$0")/.."
-BUILD_NAME="MultiSpace Browser"
+BUILD_NAME="CheckMate Browser"
 APP_NAME="CheckMate Browser"
 VERSION=$(node -p "require('./package.json').version")
 echo "→ Installing parts…"

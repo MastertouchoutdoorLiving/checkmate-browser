@@ -174,11 +174,13 @@ $('#ai-key').addEventListener('keydown', (e) => e.key === 'Enter' && $('#ai-save
 $('#jt-off').addEventListener('click', () => confirm('Disconnect JobTread?') && save('jt', ''))
 $('#ai-off').addEventListener('click', () => confirm('Remove the AI key?') && save('ai', ''))
 
+function openSettings(open = true) { $('#settings-panel').hidden = $('#settings-bg').hidden = !open; if (open) $('#settings-panel').scrollTop = 0 }
+$('#open-settings').addEventListener('click', () => { openSettings(); renderConn() })
+$('#close-settings').addEventListener('click', () => openSettings(false))
+$('#settings-bg').addEventListener('click', () => openSettings(false))
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#settings-panel').hidden) openSettings(false) })
 window.imsg.onShowConnections(() => {
-  const c = document.querySelector('#conn')
-  c.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  c.classList.add('flash')
-  setTimeout(() => c.classList.remove('flash'), 1600)
+  openSettings()
   renderConn().then(() => { const k = !$('#jt-row').hidden ? $('#jt-key') : !$('#ai-row').hidden ? $('#ai-key') : null; if (k) k.focus() })
 })
 window.imsg.onTodos((t) => { todos = t; render() })
@@ -204,7 +206,7 @@ const dayLabel = (iso) => {
 }
 function renderJt() {
   const box = $('#jt-tasks')
-  if (!jtTasks.connected) { box.innerHTML = '<div class="empty">Connect JobTread below (Settings · Connections) to see the tasks assigned to you.</div>'; return }
+  if (!jtTasks.connected) { box.innerHTML = '<div class="empty">Connect JobTread below (⚙ Settings) to see the tasks assigned to you.</div>'; return }
   if (jtTasks.error) { box.innerHTML = `<div class="empty">${esc(jtTasks.error)}</div>`; return }
   if (!jtTasks.tasks.length) { box.innerHTML = '<div class="empty">Nothing assigned to you in JobTread. 🎉</div>'; return }
   const t = todayStr()
@@ -484,10 +486,10 @@ const hm = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: 
 const apptWhen = (ev) => (ev.allDay ? 'All day' : hm(ev.start))
 function renderAppts() {
   const box = $('#appts')
-  if (!cal.connected) { box.innerHTML = '<div class="empty">Connect Google Calendar in Settings · Connections to see today\'s appointments here.</div>'; return }
+  if (!cal.connected) { box.innerHTML = '<div class="empty">Connect Google Calendar in ⚙ Settings to see today\'s appointments here.</div>'; return }
   if (cal.error) { box.innerHTML = `<div class="empty">${esc(cal.error)}</div>`; return }
   if (!cal.events.length) { box.innerHTML = '<div class="empty">No appointments today.</div>'; return }
-  const warn = cal.publicOnly ? '<div class="card cal-warn">⚠️ Google only sends "Busy" because the calendar is connected with its <b>public</b> address. Click <b>Disconnect calendar</b> in Settings · Connections and paste the <b>Secret address in iCal format</b> instead (Google Calendar → Settings → your calendar → Integrate calendar). Then names, addresses and JobTread links show here.</div>' : ''
+  const warn = cal.publicOnly ? '<div class="card cal-warn">⚠️ Google only sends "Busy" because the calendar is connected with its <b>public</b> address. Click <b>Disconnect calendar</b> in ⚙ Settings and paste the <b>Secret address in iCal format</b> instead (Google Calendar → Settings → your calendar → Integrate calendar). Then names, addresses and JobTread links show here.</div>' : ''
   const now = Date.now()
   box.innerHTML = warn + cal.events.map((ev) => `<div class="card fu appt ${!ev.allDay && ev.end < now ? 'past' : ''}" data-appt="${esc(ev.id)}">
     <span class="when">${esc(apptWhen(ev))}</span>

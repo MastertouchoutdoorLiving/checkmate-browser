@@ -3,7 +3,7 @@
 # After this you open it from Launchpad / Applications / the Dock — no Terminal needed.
 set -e
 cd "$(dirname "$0")/.."
-BUILD_NAME="MultiSpace Browser"   # internal name (keeps your logins)
+BUILD_NAME="CheckMate Browser"
 APP_NAME="CheckMate Browser"      # what you see
 echo "→ Installing parts…"
 npm install --no-fund --no-audit

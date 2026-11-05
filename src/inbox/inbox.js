@@ -246,7 +246,7 @@ $('#r-ai').addEventListener('click', async () => {
     if (!document.execCommand('insertText', false, reply)) box.value = reply
   } catch (err) {
     $('#r-msg').className = 'msg err'
-    $('#r-msg').textContent = /NO_KEY/.test(String(err)) ? 'Add a Claude API key in Tasks → Settings · Connections.' : 'The AI could not write a reply right now.'
+    $('#r-msg').textContent = /NO_KEY/.test(String(err)) ? 'Add a Claude API key in Tasks → ⚙ Settings.' : 'The AI could not write a reply right now.'
   } finally {
     b.disabled = false
     b.textContent = '✨ Suggest'
