@@ -15,6 +15,7 @@ const {
   nativeImage,
   Notification,
   safeStorage,
+  nativeTheme,
   ClipboardItem,
 } = require('electron')
 const { pathToFileURL, fileURLToPath } = require('url')
@@ -2447,6 +2448,7 @@ function buildAppMenu() {
               { label: 'Settings: JobTread & AI Keys…', accelerator: 'CmdOrCtrl+,', click: showConnections },
               { label: 'Search JobTread…', accelerator: 'CmdOrCtrl+K', click: () => showTasksAnd('tasks:search') },
               { label: 'Today: Summary of My Day', accelerator: 'CmdOrCtrl+Shift+T', click: showToday },
+              { label: 'Appearance', submenu: [['system', 'Match My Mac'], ['light', 'Light'], ['dark', 'Dark']].map(([v, l]) => ({ label: l, type: 'radio', checked: (store.state.settings.theme || 'system') === v, click: () => { store.state.settings.theme = v; store.save(); nativeTheme.themeSource = v } })) },
               { label: 'Let Claude Control This Browser', type: 'checkbox', checked: control.isOn(), click: toggleClaudeControl },
               { label: 'Export Team Setup…', click: () => teamExportFn && teamExportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup saved', detail: `${r.apps} apps and ${r.quickReplies} quick replies were saved to:\n${r.file}\n\nSend this file to your team. No keys or passwords are in it.` })).catch((err) => dialog.showErrorBox('Export failed', err.message)) },
               { label: 'Import Team Setup…', click: () => teamImportFn && teamImportFn().then((r) => r && dialog.showMessageBox(win, { message: 'Team setup imported', detail: `${r.added} apps added and ${r.quickReplies} quick replies imported.` })).catch((err) => dialog.showErrorBox('Import failed', err.message)) },
@@ -2659,6 +2661,7 @@ app.whenReady().then(() => {
     try { app.dock.setIcon(path.join(__dirname, 'ui', 'icon.png')) } catch {}
   }
   store = new Store(app.getPath('userData'))
+  nativeTheme.themeSource = store.state.settings.theme || 'system'
   vault = new PasswordVault(app.getPath('userData'))
   // Lets the extension toolbar in the browser UI show extension icons.
   ElectronChromeExtensions.handleCRXProtocol(session.defaultSession)

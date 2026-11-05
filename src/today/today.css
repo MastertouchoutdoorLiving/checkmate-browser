@@ -67,3 +67,19 @@ button.row:hover, .row.click:hover { background: var(--hover); }
 .more { display: block; width: 100%; text-align: center; border: 0; background: none; color: var(--muted); font-size: 12.5px; padding: 6px; border-radius: 8px; }
 .more:hover { background: var(--hover); }
 .foot { color: var(--muted); font-size: 12px; text-align: center; margin-top: 22px; }
+
+/* ---- big screens: use the width and scale text up */
+#wrap { max-width: min(1700px, 96vw); }
+@media (min-width: 1500px) { #wrap { zoom: 1.2; } }
+@media (min-width: 1900px) { #wrap { zoom: 1.4; } }
+
+/* ---- dark mode (follows Appearance in the CheckMate menu / the Mac) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1916; --panel: #26231f; --card: #24211d; --line: #34302a; --line2: #433e36;
+    --text: #efe9e0; --muted: #a39a8d; --accent: #f57a4c; --blue: #6aa0ff; --red: #ff7b68; --green: #4cc27d; --hover: #2e2a25;
+  }
+  .n.red { background: #4a2420; }
+  .btn.primary, .tag, .cnt { color: #fff; }
+  .filters button.on { color: #1b1916; }
+}

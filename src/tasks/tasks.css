@@ -112,3 +112,22 @@ details.tpl { margin-top: 8px; }
 .chip { border: 1px solid var(--line, #ddd); background: transparent; color: inherit; border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
 .chip.on { background: var(--accent, #2563eb); border-color: var(--accent, #2563eb); color: #fff; }
 .cal-warn { background: #fff4e5; border-color: #f5c78a; color: #7a4b00; font-size: 13px; line-height: 1.45; padding: 10px 14px; margin-bottom: 8px; }
+
+/* ---- big screens */
+#wrap { max-width: min(1700px, 96vw); }
+@media (min-width: 1500px) { #wrap { zoom: 1.2; } }
+@media (min-width: 1900px) { #wrap { zoom: 1.4; } }
+
+/* ---- dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1916; --panel: #26231f; --card: #24211d; --line: #34302a; --line2: #433e36;
+    --text: #efe9e0; --muted: #a39a8d; --accent: #f57a4c; --blue: #6aa0ff; --red: #ff7b68; --green: #4cc27d; --hover: #2e2a25;
+  }
+  .pill.on { background: #1f3a2a; }
+  #summary { border-color: #5a3a2c; background: #2a211c; }
+  .jtt .src { background: #22324f; color: #9dbcf5; }
+  .cal-warn { background: #3a2c12; border-color: #6b5320; color: #f1c982; }
+  .btn.primary { color: #fff; }
+  .fu-tab.on { color: #1b1916; }
+}

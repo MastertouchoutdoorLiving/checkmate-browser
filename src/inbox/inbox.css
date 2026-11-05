@@ -74,3 +74,18 @@ h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -.3px; displa
 .body, .top, .preview { min-width: 0; overflow: hidden; }
 .preview { display: block; text-overflow: ellipsis; }
 .item:not(:hover):not(.open) .act.reply { display: inline-block; }
+
+/* ---- big screens */
+#wrap { max-width: min(1100px, 96vw); }
+@media (min-width: 1500px) { #wrap { max-width: 1000px; zoom: 1.2; height: calc(100% / 1.2); } }
+@media (min-width: 1900px) { #wrap { max-width: 1100px; zoom: 1.4; height: calc(100% / 1.4); } }
+
+/* ---- dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1916; --panel: #26231f; --card: #24211d; --line: #34302a; --line2: #433e36;
+    --text: #efe9e0; --muted: #a39a8d; --accent: #f57a4c; --accent-soft: #4a2c20; --hover: #2e2a25;
+  }
+  .job { background: #22324f; color: #9dbcf5; }
+  #filters button.on { color: #1b1916; }
+}

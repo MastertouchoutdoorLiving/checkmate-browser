@@ -196,3 +196,14 @@ body.apps-compact .add-row { text-align: center; font-size: 20px; padding: 6px 0
 body.apps-compact .add-row .label { display: none; }
 .pw-list { max-height: 320px; overflow-y: auto; margin-top: 10px; }
 .modal input.pw-input { width: 100%; height: 34px; border-radius: 6px; border: 1px solid #cfd4dc; background: #fff; color: var(--text); padding: 0 10px; font: inherit; outline: none; }
+
+/* ---- dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rail: #14130f; --panel: #1c1a17; --panel-hover: #2a2723; --panel-active: #34302a;
+    --bar: #1c1a17; --modal: #26231f; --text: #ece6dd; --muted: #a09787; --border: #34302a;
+    --accent: #5b8cf5;
+  }
+  .rail-btn, .app.active, #address:focus, .modal input[type=text], .modal textarea, .modal input.pw-input { background: #2a2723; color: var(--text); }
+  .modal input[type=text], .modal textarea, .modal input.pw-input { border-color: #433e36; }
+}

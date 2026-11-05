@@ -364,3 +364,20 @@ html, body { overflow: hidden; }
 #chat-job.none { background: var(--card); border-style: dashed; color: var(--muted); }
 #chat-job.none .jt-more { border-left: none; }
 #chat-job { flex: 0 4 auto; max-width: 320px; }
+
+/* ---- big screens */
+@media (min-width: 1600px) { #app { grid-template-columns: 400px minmax(0, 1fr) auto; } html { zoom: 1.1; } }
+@media (min-width: 2000px) { #app { grid-template-columns: 440px minmax(0, 1fr) auto; } html { zoom: 1.25; } }
+
+/* ---- dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1916; --panel: #211e1a; --card: #26231f; --line: #34302a; --line2: #433e36;
+    --text: #efe9e0; --muted: #a39a8d; --soft: #6f675c; --accent: #f57a4c; --accent-soft: #4a2c20;
+    --them: #2e2a25; --hover: #2b2722; --active: #353029;
+  }
+  .icon-btn:hover, .sheet input:focus, .sheet textarea:focus, #alerts-menu, #qr-pop, #when-menu, #ai-pop { background: #2b2722; }
+  #error, .sheet-err, .tm.failed { background: #3a211b; border-color: #6b3a2c; color: #ffb59a; }
+  #chat-job, #jtp-hint { background: #22324f; border-color: #35507f; color: #9dbcf5; }
+  input, textarea, select { color-scheme: dark; }
+}
