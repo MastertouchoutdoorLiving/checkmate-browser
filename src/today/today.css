@@ -69,9 +69,8 @@ button.row:hover, .row.click:hover { background: var(--hover); }
 .foot { color: var(--muted); font-size: 12px; text-align: center; margin-top: 22px; }
 
 /* ---- big screens: use the width and scale text up */
-#wrap { max-width: min(1700px, 96vw); }
-@media (min-width: 1500px) { #wrap { zoom: 1.2; } }
-@media (min-width: 1900px) { #wrap { zoom: 1.4; } }
+#wrap { max-width: min(1760px, 94vw); }
+@media (min-width: 1700px) { #grid { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 26px; } }
 
 /* ---- dark mode (follows Appearance in the CheckMate menu / the Mac) */
 @media (prefers-color-scheme: dark) {

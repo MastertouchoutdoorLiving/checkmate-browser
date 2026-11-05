@@ -1,7 +1,7 @@
 {
   "name": "multispace-browser",
   "productName": "MultiSpace Browser",
-  "version": "1.9.9",
+  "version": "1.9.10",
   "description": "CheckMate Browser: spaces, apps, iMessage and WhatsApp in one window",
   "main": "src/main.js",
   "scripts": {
