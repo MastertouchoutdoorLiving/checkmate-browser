@@ -1038,6 +1038,85 @@ if (location.hostname === 'web.whatsapp.com' && window.top === window) {
   }, 1000)
 }
 
+// ---------------------------------------------------------------- WhatsApp: "✓ JobTread" in the chat header
+// Like the iMessage page: when this chat's number (or linked job) is in JobTread, show a green badge in the header.
+if (location.hostname === 'web.whatsapp.com' && window.top === window) {
+  let hhost, hroot, shownFor = '', seq = 0, connected = null, url = ''
+  const chatNow = () => {
+    const main = document.querySelector('#main')
+    const head = main && main.querySelector('header')
+    if (!head) return null
+    const title = (((head.querySelector('span[dir="auto"]') || head.querySelector('span[title]')) || {}).textContent || '').trim()
+    let phone = ''
+    const idEl = main.querySelector('[data-id*="@c.us"]')
+    const m = idEl && /_(\d+)@c\.us/.exec(idEl.getAttribute('data-id'))
+    if (m) phone = m[1]
+    if (!phone && /^\+?[\d\s()-]{7,}$/.test(title)) phone = title.replace(/\D/g, '')
+    const group = !!main.querySelector('[data-id*="@g.us"]')
+    return title ? { title, phone, group } : null
+  }
+  function ensureH() {
+    if (hhost && document.body.contains(hhost)) return
+    hhost = document.createElement('div')
+    hhost.id = '__ms_wa_jthead'
+    hroot = hhost.attachShadow({ mode: 'closed' })
+    msWire(hroot)
+    hroot.innerHTML = `<style>
+      *{box-sizing:border-box;font-family:-apple-system,system-ui,sans-serif}
+      .c{position:fixed;top:16px;right:230px;z-index:2147483645;max-width:300px;display:flex;align-items:center;gap:6px;border-radius:16px;padding:5px 11px;font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border:1px solid #b7e0c3;background:#e8f6ec;color:#1d6b3a}
+      .c.no{border-color:#e0e0e0;background:#f5f5f5;color:#8a8a8a;font-weight:500;cursor:default}
+      [hidden]{display:none!important}
+    </style><div class="c" hidden></div>`
+    hroot.querySelector('.c').addEventListener('click', () => { if (url) ipcRenderer.send('jt:open', url) })
+    document.body.appendChild(hhost)
+  }
+  async function refreshH(c) {
+    const my = ++seq
+    const chip = hroot.querySelector('.c')
+    try {
+      if (connected !== true) connected = !!(await ipcRenderer.invoke('jt:status')).connected
+      if (!connected) { chip.hidden = true; connected = null; return }
+      const link = await ipcRenderer.invoke('jt:link-get', 'wa:' + c.title).catch(() => null)
+      if (my !== seq) return
+      if (link && link.jobId) {
+        url = `https://app.jobtread.com/jobs/${link.jobId}`
+        chip.className = 'c'
+        chip.textContent = `✓ JobTread 🔨 ${link.jobNumber ? '#' + link.jobNumber + ' ' : ''}${link.jobName || ''} ↗`
+        chip.hidden = false
+        return
+      }
+      const q = c.phone ? { phone: c.phone } : { name: c.title }
+      const d = await ipcRenderer.invoke('jt:find', q)
+      if (my !== seq) return
+      if (d && d.name) {
+        url = d.url || ''
+        chip.className = 'c'
+        chip.textContent = `✓ JobTread 👤 ${d.name} ↗`
+      } else {
+        url = ''
+        chip.className = 'c no'
+        chip.textContent = 'JobTread: no match'
+      }
+      chip.hidden = false
+    } catch {
+      chip.hidden = true
+      shownFor = '' // try again next tick
+    }
+  }
+  setInterval(() => {
+    if (!document.body) return
+    ensureH()
+    const c = chatNow()
+    const chip = hroot.querySelector('.c')
+    if (!c || c.group) { chip.hidden = true; shownFor = ''; return }
+    const key = c.title + '|' + c.phone
+    if (key === shownFor) return
+    shownFor = key
+    chip.hidden = true
+    refreshH(c)
+  }, 1500)
+}
+
 // ---------------------------------------------------------------- pasting into our own boxes on WhatsApp
 // WhatsApp grabs paste and Cmd+V for its own message box, so the key boxes in our helpers never got
 // the text. Our listeners are added before WhatsApp's, so they run first: we paste the text ourselves

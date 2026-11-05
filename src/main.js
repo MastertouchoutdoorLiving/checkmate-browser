@@ -1367,7 +1367,9 @@ function registerIpc() {
   ipcMain.handle('unified:list', imsgOnly(() => unifiedList()))
   ipcMain.handle('unified:open', imsgOnly((it) => openUnified(it)))
   // Reply from the Unread page without opening the chat
+  ipcMain.handle('imsg:mark-in-messages', imsgOnly((guid) => markInMessagesApp(guid)))
   ipcMain.handle('unified:mark-read', imsgOnly((guid, date) => {
+    markInMessagesApp(guid)
     const p = (store.state.settings.imsg = store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} })
     p.readUpTo = p.readUpTo || {}
     p.readUpTo[String(guid)] = Math.max(Number(date) || 0, p.readUpTo[String(guid)] || 0)
@@ -2423,6 +2425,20 @@ async function toggleClaudeControl() {
   buildAppMenu()
 }
 
+// Experimental: showing the conversation in the Messages app (hidden, in the background) is the only way to make
+// Messages itself, and so the iPhone, count it as read. Off unless you turn it on in the Messages menu.
+const markedInMessages = new Map()
+function markInMessagesApp(guid) {
+  if (process.platform !== 'darwin' || !store.state.settings.imsgMarkInMessages) return false
+  const parts = String(guid || '').split(';')
+  const h = parts[parts.length - 1]
+  if (parts[1] !== '-' || !/^(\+?\d{7,15}|[^\s@;]+@[^\s@;]+\.[^\s@;]+)$/.test(h)) return false // one-to-one chats only
+  if (Date.now() - (markedInMessages.get(h) || 0) < 60e3) return false
+  markedInMessages.set(h, Date.now())
+  require('child_process').execFile('/usr/bin/open', ['-g', '-j', `imessage://${encodeURI(h)}`], () => {})
+  return true
+}
+
 function buildAppMenu() {
   const send = (channel, ...args) => () => win && win.webContents.send(channel, ...args)
   const isMac = process.platform === 'darwin'
@@ -2556,6 +2572,7 @@ function buildAppMenu() {
         { label: 'Sound for New iMessages', type: 'checkbox', checked: imsgAlerts().sound, click: (m) => setImsgAlerts({ sound: m.checked }) },
         { label: 'Notification for New iMessages', type: 'checkbox', checked: imsgAlerts().banner, click: (m) => setImsgAlerts({ banner: m.checked }) },
         { type: 'separator' },
+        { label: '(Experimental) Also Mark as Read in the Messages App', type: 'checkbox', checked: !!store.state.settings.imsgMarkInMessages, click: (m) => { store.state.settings.imsgMarkInMessages = m.checked; store.save() } },
         { label: 'Play Test Sound', click: playAlertSound },
       ],
     },
@@ -2641,6 +2658,8 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, quitGracefull
 process.on('uncaughtException', (err) => console.error('[error]', err))
 process.on('unhandledRejection', (err) => console.error('[error]', err))
 
+// Used by the release build: start the real app, then quit with code 0 if it got this far (a launch crash gives a non-zero exit).
+if (process.env.MULTISPACE_SMOKE) app.whenReady().then(() => setTimeout(() => app.exit(0), 8000))
 app.whenReady().then(() => {
   if (process.platform === 'darwin' && !app.isPackaged) {
     try { app.dock.setIcon(path.join(__dirname, 'ui', 'icon.png')) } catch {}

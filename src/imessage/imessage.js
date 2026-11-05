@@ -59,6 +59,7 @@ function markRead(c) {
   delete prefs.manualUnread[c.guid]
   prefs.readUpTo[c.guid] = c.date
   savePrefs()
+  window.imsg.markInMessages(c.guid).catch(() => {})
 }
 function markUnread(c) {
   prefs.manualUnread[c.guid] = true
@@ -187,7 +188,10 @@ async function refreshChats() {
   // a new message after you read a chat makes it unread again, unless you're looking at it
   if (current && current.id) {
     const c = chats.find((x) => x.id === current.id)
-    if (c && !prefs.manualUnread[c.guid] && document.hasFocus()) prefs.readUpTo[c.guid] = c.date
+    if (c && !prefs.manualUnread[c.guid] && document.hasFocus()) {
+      if (c.unread && prefs.readUpTo[c.guid] !== c.date) window.imsg.markInMessages(c.guid).catch(() => {})
+      prefs.readUpTo[c.guid] = c.date
+    }
   }
   renderChats()
   if (current && current.id) {

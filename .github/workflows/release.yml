@@ -90,6 +90,11 @@ jobs:
           else
             codesign --force --deep --sign - "stage/CheckMate Browser.app"
           fi
+          # Smoke test: really start the packaged app. A launch crash (like "Unable to find helper app") gives a non-zero exit and stops the release.
+          echo "Smoke test: launching the packaged app"
+          rm -rf "$RUNNER_TEMP/smoke"
+          MULTISPACE_SMOKE=1 perl -e 'alarm 120; exec @ARGV' "stage/CheckMate Browser.app/Contents/MacOS/MultiSpace Browser" "--user-data-dir=$RUNNER_TEMP/smoke" || { echo "ERROR: the packaged app crashed or did not start"; exit 1; }
+          echo "Smoke test passed"
           (cd stage && ditto -c -k --keepParent "CheckMate Browser.app" ../out/CheckMate-Browser-mac.zip)
           ln -s /Applications stage/Applications
           hdiutil create -volname "CheckMate Browser" -srcfolder stage -ov -format UDZO out/CheckMate-Browser.dmg

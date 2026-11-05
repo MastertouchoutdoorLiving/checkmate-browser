@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('imsg', {
   setPrefs: (p) => ipcRenderer.invoke('imsg:set-prefs', p),
   onPrefsChanged: (cb) => ipcRenderer.on('imsg:prefs-changed', () => cb()),
   markRead: (guid, date) => ipcRenderer.invoke('unified:mark-read', guid, date),
+  markInMessages: (guid) => ipcRenderer.invoke('imsg:mark-in-messages', guid),
   waSend: (it, text) => ipcRenderer.invoke('unified:wa-send', it, text),
   sendFile: (target, name, bytes) => ipcRenderer.invoke('imsg:send-file', target, name, bytes),
   clipboardFiles: () => ipcRenderer.invoke('imsg:clipboard-files'),
