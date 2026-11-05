@@ -82,6 +82,11 @@ ${esc(a.url)}">
   $('#reload').textContent = tab && tab.loading ? '✕' : '⟳'
   $('#reload').title = tab && tab.loading ? 'Stop' : 'Reload'
   if (!addressFocused) $('#address').value = tab && tab.url !== 'about:blank' ? tab.url : ''
+  const z = $('#zoom-chip')
+  const zv = tab && tab.zoom ? tab.zoom : 100
+  z.textContent = zv + '%'
+  z.classList.toggle('off', zv !== 100)
+  z.title = zv === 100 ? 'Page zoom: 100% (normal)' : `Page zoom: ${zv}%. Click to reset to 100%`
   $('#empty').style.display = tab ? 'none' : 'grid'
 
   renderActionList(space, tab)
@@ -301,6 +306,7 @@ $('#toggle-apps').addEventListener('click', toggleApps)
 $('#open-extensions').addEventListener('click', () => extensionsModal())
 $('#open-passwords').addEventListener('click', () => passwordsModal())
 
+$('#zoom-chip').addEventListener('click', () => api.zoomReset())
 const address = $('#address')
 address.addEventListener('focus', () => {
   addressFocused = true

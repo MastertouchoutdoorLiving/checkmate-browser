@@ -457,6 +457,8 @@ function wireTab(tab) {
     if (details.reason === 'clean-exit' || quitting) return
     setTimeout(() => !wc.isDestroyed() && wc.reload(), 1000)
   })
+  wc.on('zoom-changed', () => setTimeout(pushState, 50))
+  wc.on('did-finish-load', () => pushState())
   wc.on('did-navigate', (_e, url) => {
     if (tab.sleeping) return
     if (tab.internal) return
@@ -768,6 +770,7 @@ function snapshot() {
               favicon: t.favicon,
               badge: t.badge,
               loading: t.loading,
+              zoom: Math.round(100 * Math.pow(1.2, wc.getZoomLevel())),
               canGoBack: wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack(),
               canGoForward: wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward(),
             }
@@ -1682,6 +1685,7 @@ function registerIpc() {
   ipcMain.on('nav:back', () => activeTab()?.view.webContents.navigationHistory.goBack())
   ipcMain.on('nav:forward', () => activeTab()?.view.webContents.navigationHistory.goForward())
   ipcMain.on('nav:reload', () => activeTab()?.view.webContents.reload())
+  ipcMain.on('nav:zoom-reset', () => { activeTab()?.view.webContents.setZoomLevel(0); pushState() })
   ipcMain.on('nav:stop', () => activeTab()?.view.webContents.stop())
 
   ipcMain.on('settings:set', (_e, patch) => {
@@ -2515,7 +2519,7 @@ function buildAppMenu() {
         { type: 'separator' },
         { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => zoom(0.5) },
         { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => zoom(-0.5) },
-        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => activeTab()?.view.webContents.setZoomLevel(0) },
+        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => { activeTab()?.view.webContents.setZoomLevel(0); pushState() } },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],
@@ -2577,9 +2581,18 @@ function buildAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
+const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500]
 function zoom(delta) {
   const wc = activeTab()?.view.webContents
-  if (wc) wc.setZoomLevel(wc.getZoomLevel() + delta)
+  if (!wc) return
+  const cur = 100 * Math.pow(1.2, wc.getZoomLevel())
+  let i = ZOOM_STEPS.findIndex((z) => z >= cur - 0.5)
+  if (i < 0) i = ZOOM_STEPS.length - 1
+  if (delta > 0 && ZOOM_STEPS[i] <= cur + 0.5) i++
+  else if (delta < 0) i--
+  i = Math.max(0, Math.min(ZOOM_STEPS.length - 1, i))
+  wc.setZoomLevel(Math.log(ZOOM_STEPS[i] / 100) / Math.log(1.2))
+  pushState()
 }
 
 // ---------------------------------------------------------------- startup

@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld('browser', {
   back: () => ipcRenderer.send('nav:back'),
   forward: () => ipcRenderer.send('nav:forward'),
   reload: () => ipcRenderer.send('nav:reload'),
+  zoomReset: () => ipcRenderer.send('nav:zoom-reset'),
   stop: () => ipcRenderer.send('nav:stop'),
 
   setSettings: (patch) => ipcRenderer.send('settings:set', patch),

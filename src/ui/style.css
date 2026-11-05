@@ -207,3 +207,7 @@ body.apps-compact .add-row .label { display: none; }
   .rail-btn, .app.active, #address:focus, .modal input[type=text], .modal textarea, .modal input.pw-input { background: #2a2723; color: var(--text); }
   .modal input[type=text], .modal textarea, .modal input.pw-input { border-color: #433e36; }
 }
+
+/* ---- zoom indicator */
+.zoom-chip { height: 26px; min-width: 48px; border-radius: 13px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 12px; padding: 0 9px; margin-right: 4px; }
+.zoom-chip.off { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
