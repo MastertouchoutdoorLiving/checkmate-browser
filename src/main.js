@@ -1876,15 +1876,22 @@ async function readClipboardFiles() {
   return out
 }
 
+const secretbox = require('./secretbox.js')
+// Reads a stored key; entries saved by older versions (Keychain) are re-saved with the local key.
+function migrateSecret(slot) {
+  const e = store.state.settings[slot]
+  if (!e || !e.key) return ''
+  const v = secretbox.open(e)
+  if (v && e.enc !== 'local') {
+    const { key, enc, ...rest } = e
+    store.state.settings[slot] = secretbox.pack(v, rest)
+    store.save()
+  }
+  return v
+}
 // ---------------------------------------------------------------- JobTread (Save contact → also add the customer)
 function jtKey() {
-  const k = store.state.settings.jobtread && store.state.settings.jobtread.key
-  if (!k) return ''
-  try {
-    return safeStorage.isEncryptionAvailable() && store.state.settings.jobtread.enc ? safeStorage.decryptString(Buffer.from(k, 'base64')) : Buffer.from(k, 'base64').toString('utf8')
-  } catch {
-    return ''
-  }
+  return migrateSecret('jobtread')
 }
 function jtStatus() {
   const j = store.state.settings.jobtread || {}
@@ -1898,13 +1905,7 @@ async function jtSetKey(key) {
     return jtStatus()
   }
   const org = await jobtread.whoAmI(key)
-  const enc = safeStorage.isEncryptionAvailable()
-  store.state.settings.jobtread = {
-    key: (enc ? safeStorage.encryptString(key) : Buffer.from(key, 'utf8')).toString('base64'),
-    enc,
-    org: org.name || '',
-    on: true,
-  }
+  store.state.settings.jobtread = secretbox.pack(key, { org: org.name || '', on: true })
   store.save()
   return jtStatus()
 }
@@ -2179,20 +2180,13 @@ setInterval(() => tickTimers().catch(() => {}), 20 * 1000)
 // Dictation uses the Mac's own Dictation (no extra memory). The AI suggestion asks Claude for a short
 // reply, using an Anthropic API key the user pastes once (stored encrypted).
 function secretGet(slot) {
-  const k = store.state.settings[slot] && store.state.settings[slot].key
-  if (!k) return ''
-  try {
-    return store.state.settings[slot].enc ? safeStorage.decryptString(Buffer.from(k, 'base64')) : Buffer.from(k, 'base64').toString('utf8')
-  } catch {
-    return ''
-  }
+  return migrateSecret(slot)
 }
 function secretSet(slot, value, extra = {}) {
   if (!value) {
     delete store.state.settings[slot]
   } else {
-    const enc = safeStorage.isEncryptionAvailable()
-    store.state.settings[slot] = { key: (enc ? safeStorage.encryptString(value) : Buffer.from(value, 'utf8')).toString('base64'), enc, ...extra }
+    store.state.settings[slot] = secretbox.pack(value, extra)
   }
   store.save()
 }
