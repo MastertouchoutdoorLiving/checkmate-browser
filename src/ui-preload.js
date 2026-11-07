@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('browser', {
   newTab: (url) => ipcRenderer.send('tab:new', url),
   selectTab: (spaceId, tabId) => ipcRenderer.send('tab:select', spaceId, tabId),
   closeTab: (spaceId, tabId) => ipcRenderer.send('tab:close', spaceId, tabId),
+  popoutTab: (spaceId, tabId, at) => ipcRenderer.send('tab:popout', spaceId, tabId, at),
+  tabMenu: (spaceId, tabId) => ipcRenderer.send('tab:menu', spaceId, tabId),
   go: (input) => ipcRenderer.send('nav:go', input),
   back: () => ipcRenderer.send('nav:back'),
   forward: () => ipcRenderer.send('nav:forward'),

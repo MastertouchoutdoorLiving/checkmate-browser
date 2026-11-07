@@ -522,9 +522,107 @@ function parseBadge(title) {
   return 0
 }
 
+// ---------------------------------------------------------------- tabs in their own window
+// "Move to New Window" (or dragging a tab out of the strip) gives one tab its own window with a small
+// toolbar. The tab stays in the same space and keeps its logins. Closing that window, or "Back to main
+// window", puts the tab back in the main window, so nothing is lost.
+const POPOUT_BAR = 44
+function popoutTab(spaceId, tabId, at) {
+  const rt = runtimes.get(spaceId)
+  const tab = rt && rt.tabs.get(tabId)
+  if (!tab || tab.popout || !win || win.isDestroyed()) return
+  const b = win.getBounds()
+  const pw = new BrowserWindow({
+    icon: path.join(__dirname, 'ui', 'icon.png'),
+    width: 1100,
+    height: 800,
+    minWidth: 520,
+    minHeight: 360,
+    x: at && Number.isFinite(at.x) ? Math.round(at.x - 120) : b.x + 40,
+    y: at && Number.isFinite(at.y) ? Math.round(at.y - 20) : b.y + 40,
+    title: tab.title || DISPLAY_NAME,
+    backgroundColor: '#ffffff',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    trafficLightPosition: { x: 16, y: 14 },
+    webPreferences: { preload: path.join(__dirname, 'popout-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  })
+  pw.spaceId = spaceId
+  pw.tabId = tabId
+  tab.popout = pw
+  // Main window shows the neighbouring tab instead.
+  try { win.contentView.removeChildView(tab.view) } catch {}
+  pw.contentView.addChildView(tab.view)
+  const fit = () => {
+    if (pw.isDestroyed()) return
+    const [w, h] = pw.getContentSize()
+    tab.view.setBounds({ x: 0, y: POPOUT_BAR, width: w, height: Math.max(0, h - POPOUT_BAR) })
+    tab.view.setVisible(true)
+  }
+  pw.on('resize', fit)
+  pw.on('enter-full-screen', fit)
+  pw.on('leave-full-screen', fit)
+  pw.once('ready-to-show', () => { fit(); pw.show() })
+  pw.on('close', () => returnTab(tab))
+  pw.loadFile(path.join(__dirname, 'ui', 'popout.html')).catch(() => {})
+  if (rt.activeTabId === tabId) {
+    const next = rt.order.map((id) => rt.tabs.get(id)).find((t) => t && !t.popout)
+    rt.activeTabId = next ? next.id : null
+    if (next && !next.internal) rt.extensions.selectTab(next.view.webContents)
+  }
+  layoutViews()
+  persistTabs(spaceId)
+  pushState()
+}
+
+function returnTab(tab) {
+  const pw = tab.popout
+  if (!pw) return
+  tab.popout = null
+  try { pw.contentView.removeChildView(tab.view) } catch {}
+  if (quitting || !win || win.isDestroyed()) return
+  win.contentView.addChildView(tab.view)
+  tab.view.setVisible(false)
+  if (pw && !pw.isDestroyed()) setTimeout(() => !pw.isDestroyed() && pw.destroy(), 0)
+  selectTab(tab.spaceId, tab.id)
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+function popoutState(tab) {
+  const wc = tab.view.webContents
+  return {
+    url: tab.url,
+    title: tab.title,
+    loading: !!tab.loading,
+    canGoBack: wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack(),
+    canGoForward: wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward(),
+    zoom: Math.round(100 * Math.pow(1.2, wc.getZoomLevel())),
+  }
+}
+function pushPopouts() {
+  for (const rt of runtimes.values()) {
+    for (const tab of rt.tabs.values()) {
+      if (!tab.popout || tab.popout.isDestroyed() || tab.view.webContents.isDestroyed()) continue
+      tab.popout.setTitle(tab.title || DISPLAY_NAME)
+      tab.popout.webContents.send('popout:state', popoutState(tab))
+    }
+  }
+}
+function popoutFromEvent(e) {
+  const pw = BrowserWindow.fromWebContents(e.sender)
+  const rt = pw && runtimes.get(pw.spaceId)
+  return rt && rt.tabs.get(pw.tabId)
+}
+
 function selectTab(spaceId, tabId) {
   const rt = runtimes.get(spaceId)
   if (!rt || !rt.tabs.has(tabId)) return
+  const target = rt.tabs.get(tabId)
+  if (target.popout) {
+    if (!target.popout.isDestroyed()) { if (target.popout.isMinimized()) target.popout.restore(); target.popout.show(); target.popout.focus() }
+    return
+  }
   const prev = rt.tabs.get(rt.activeTabId)
   if (prev) prev.lastActive = Date.now()
   rt.activeTabId = tabId
@@ -546,7 +644,13 @@ function closeTab(spaceId, tabId) {
   const idx = rt.order.indexOf(tabId)
   rt.order.splice(idx, 1)
   rt.tabs.delete(tabId)
-  win.contentView.removeChildView(tab.view)
+  if (tab.popout) {
+    const pw = tab.popout
+    tab.popout = null
+    pw.removeAllListeners('close')
+    try { pw.contentView.removeChildView(tab.view) } catch {}
+    if (!pw.isDestroyed()) pw.destroy()
+  } else win.contentView.removeChildView(tab.view)
   tab.view.webContents.close()
   if (rt.activeTabId === tabId) {
     rt.activeTabId = rt.order[Math.min(idx, rt.order.length - 1)] ?? null
@@ -610,7 +714,7 @@ setInterval(() => {
     const showing = rt.spaceId === store.state.activeSpaceId ? rt.activeTabId : null
     for (const t of rt.tabs.values()) {
       if (t.id === rt.activeTabId) t.lastActive = rt.spaceId === store.state.activeSpaceId ? now : t.lastActive
-      if (t.id === showing) continue
+      if (t.id === showing || t.popout) continue
       if (now - (t.lastActive || now) > SLEEP_AFTER_MS) sleepTab(t)
     }
   }
@@ -739,6 +843,7 @@ function layoutViews() {
   }
   for (const rt of runtimes.values()) {
     for (const tab of rt.tabs.values()) {
+      if (tab.popout) continue // lives in its own window
       const show = tab === active && !overlayOpen
       if (show) tab.view.setBounds(panelShown ? { ...contentBounds, width: Math.max(0, contentBounds.width - panelW) } : contentBounds)
       tab.view.setVisible(show)
@@ -771,6 +876,7 @@ function snapshot() {
               badge: t.badge,
               loading: t.loading,
               zoom: Math.round(100 * Math.pow(1.2, wc.getZoomLevel())),
+              popout: !!t.popout,
               canGoBack: wc.navigationHistory ? wc.navigationHistory.canGoBack() : wc.canGoBack(),
               canGoForward: wc.navigationHistory ? wc.navigationHistory.canGoForward() : wc.canGoForward(),
             }
@@ -797,6 +903,7 @@ function pushState() {
   clearTimeout(pushTimer)
   pushTimer = setTimeout(() => {
     if (win && !win.isDestroyed()) win.webContents.send('state', snapshot())
+    pushPopouts()
     updateBadgeCount()
   }, 16)
 }
@@ -1676,6 +1783,35 @@ function registerIpc() {
   ipcMain.on('tab:new', (_e, url) => createTab(store.state.activeSpaceId, { url: url || 'https://www.google.com/' }))
   ipcMain.on('tab:select', (_e, spaceId, tabId) => selectTab(spaceId, tabId))
   ipcMain.on('tab:close', (_e, spaceId, tabId) => closeTab(spaceId, tabId))
+  ipcMain.on('tab:popout', (e, spaceId, tabId, at) => { if (e.sender === win.webContents) popoutTab(spaceId, tabId, at) })
+  ipcMain.on('tab:menu', (e, spaceId, tabId) => {
+    if (e.sender !== win.webContents) return
+    const tab = runtimes.get(spaceId)?.tabs.get(tabId)
+    if (!tab) return
+    Menu.buildFromTemplate([
+      tab.popout
+        ? { label: 'Move Back to Main Window', click: () => returnTab(tab) }
+        : { label: 'Move Tab to New Window', click: () => popoutTab(spaceId, tabId) },
+      { label: 'Reload', click: () => tab.view.webContents.reload() },
+      { type: 'separator' },
+      { label: 'Close Tab', click: () => closeTab(spaceId, tabId) },
+    ]).popup({ window: win })
+  })
+  ipcMain.on('popout:cmd', (e, cmd) => {
+    const tab = popoutFromEvent(e)
+    if (!tab) return
+    const wc = tab.view.webContents
+    if (cmd === 'back') wc.navigationHistory.goBack()
+    else if (cmd === 'forward') wc.navigationHistory.goForward()
+    else if (cmd === 'reload') (tab.loading ? wc.stop() : wc.reload())
+    else if (cmd === 'zoom-reset') { wc.setZoomLevel(0); pushState() }
+    else if (cmd === 'home') returnTab(tab)
+    else if (cmd === 'ready') e.sender.send('popout:state', popoutState(tab))
+  })
+  ipcMain.on('popout:go', (e, text) => {
+    const tab = popoutFromEvent(e)
+    if (tab && text.trim()) tab.view.webContents.loadURL(normalizeUrl(text.trim())).catch(() => {})
+  })
   ipcMain.on('nav:go', (_e, input) => {
     const tab = activeTab()
     const url = normalizeUrl(input)

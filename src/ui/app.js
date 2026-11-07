@@ -66,9 +66,9 @@ ${esc(a.url)}">
     .filter((t) => !t.appId)
     .map(
       (t) => `
-      <div draggable="true" class="tab ${t.id === space.activeTabId ? 'active' : ''} ${t.appId ? 'app-tab' : ''}" data-id="${t.id}" title="${esc(t.title)}">
+      <div draggable="true" class="tab ${t.id === space.activeTabId && !t.popout ? 'active' : ''} ${t.popout ? 'popped' : ''} ${t.appId ? 'app-tab' : ''}" data-id="${t.id}" title="${esc(t.title)}">
         ${t.loading ? '<span class="spinner"></span>' : t.favicon ? `<img src="${esc(t.favicon)}" alt="" />` : '<span class="ph"></span>'}
-        <span class="title">${esc(t.title || t.url)}</span>
+        <span class="title">${t.popout ? '⧉ ' : ''}${esc(t.title || t.url)}</span>
         ${t.badge > 0 ? badgeHtml(t.badge) : ''}
         <button class="close" data-close="${t.id}" title="Close tab">×</button>
       </div>`
@@ -201,7 +201,11 @@ $('#tabs').addEventListener('dragstart', (e) => {
   e.dataTransfer.effectAllowed = 'copyMove'
   e.dataTransfer.setData('text/plain', String(tabDrag))
 })
-$('#tabs').addEventListener('dragend', () => {
+$('#tabs').addEventListener('dragend', (e) => {
+  // Dropped outside the window (nothing accepted it): give the tab its own window.
+  if (tabDrag != null && e.dataTransfer.dropEffect === 'none' && (e.clientX < 0 || e.clientY < 0 || e.clientX > innerWidth || e.clientY > innerHeight)) {
+    api.popoutTab(activeSpace().id, tabDrag, { x: e.screenX, y: e.screenY })
+  }
   tabDrag = null
   if (dragging && dragging.list === '#tabs') dragging = null
   document.body.classList.remove('tab-dragging')
@@ -306,6 +310,12 @@ $('#toggle-apps').addEventListener('click', toggleApps)
 $('#open-extensions').addEventListener('click', () => extensionsModal())
 $('#open-passwords').addEventListener('click', () => passwordsModal())
 
+$('#tabs').addEventListener('contextmenu', (e) => {
+  const t = e.target.closest('.tab')
+  if (!t) return
+  e.preventDefault()
+  api.tabMenu(activeSpace().id, Number(t.dataset.id))
+})
 $('#zoom-chip').addEventListener('click', () => api.zoomReset())
 const address = $('#address')
 address.addEventListener('focus', () => {
