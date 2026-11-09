@@ -59,6 +59,47 @@ app.commandLine.appendSwitch('log-level', '3')
 let store
 let vault
 let win
+// Extra full browser windows (File > New Window). Each has its own space, its own selected tab per
+// space and its own size; the tabs themselves are shared, so a page shows in one window at a time.
+const extras = new Set()
+let forcedCtx // undefined = decide by the focused window; null = main window; object = an extra window
+const cx = () => {
+  if (forcedCtx !== undefined) return forcedCtx
+  const f = BrowserWindow.getFocusedWindow()
+  return [...extras].find((x) => x.win === f) || null
+}
+const ctxOfWebContents = (wc) => {
+  if (win && !win.isDestroyed() && wc === win.webContents) return null
+  return [...extras].find((x) => !x.win.isDestroyed() && x.win.webContents === wc)
+}
+const _ipcOn = ipcMain.on.bind(ipcMain)
+const _ipcHandle = ipcMain.handle.bind(ipcMain)
+const inCtx = (e, fn) => {
+  const prev = forcedCtx
+  forcedCtx = ctxOfWebContents(e.sender)
+  try { return fn() } finally { forcedCtx = prev }
+}
+ipcMain.on = (ch, fn) => _ipcOn(ch, (e, ...a) => inCtx(e, () => fn(e, ...a)))
+ipcMain.handle = (ch, fn) => _ipcHandle(ch, (e, ...a) => inCtx(e, () => fn(e, ...a)))
+const spaceNow = () => { const c = cx(); return c ? c.spaceId : store.state.activeSpaceId }
+const activeIdOf = (rt, c = cx()) => (c ? c.active[rt.spaceId] ?? null : rt.activeTabId)
+const setActiveId = (rt, id, c = cx()) => { if (c) c.active[rt.spaceId] = id; else rt.activeTabId = id }
+const shownInExtra = (tab) => [...extras].some((x) => x.active[tab.spaceId] === tab.id)
+// A page can only show in one window. Give any window that was showing `tab` another tab to show.
+function releaseTab(tab, exceptCtx) {
+  const rt = runtimes.get(tab.spaceId)
+  if (!rt) return
+  const taken = new Set()
+  const spaceCtxs = [null, ...extras]
+  for (const c of spaceCtxs) { const id = activeIdOf(rt, c); if (id && c !== undefined) taken.add(id) }
+  for (const c of spaceCtxs) {
+    if (c === exceptCtx) continue
+    if (activeIdOf(rt, c) !== tab.id) continue
+    const next = rt.order.map((id) => rt.tabs.get(id)).find((t) => t && t !== tab && !t.popout && !taken.has(t.id))
+    setActiveId(rt, next ? next.id : null, c)
+    if (next) taken.add(next.id)
+  }
+}
 let contentBounds = { x: 0, y: 0, width: 0, height: 0 }
 let overlayOpen = false // true while a modal is open in the UI, so the page view is hidden
 let nextTabId = 1
@@ -361,11 +402,20 @@ function persistTabs(spaceId) {
 
 function activateSpace(spaceId) {
   if (!store.getSpace(spaceId)) return
-  store.state.activeSpaceId = spaceId
-  store.save()
+  const c = cx()
+  if (c) c.spaceId = spaceId
+  else {
+    store.state.activeSpaceId = spaceId
+    store.save()
+  }
   restoreTabs(spaceId)
   const rt = runtimes.get(spaceId)
-  const tab = rt && rt.tabs.get(rt.activeTabId)
+  if (c && rt && !c.active[spaceId]) {
+    // first visit of this window to the space: show a tab nobody else is showing
+    const free = rt.order.map((id) => rt.tabs.get(id)).find((t) => t && !t.popout && t.id !== rt.activeTabId && !shownInExtra(t))
+    c.active[spaceId] = free ? free.id : null
+  }
+  const tab = rt && rt.tabs.get(activeIdOf(rt))
   wakeTab(tab)
   layoutViews()
   if (tab && !tab.internal) rt.extensions.selectTab(tab.view.webContents)
@@ -420,6 +470,7 @@ function createTab(spaceId, { url, appId = null, select = true, persist = true, 
   rt.order.push(tab.id)
   if (!internal) rt.extensions.addTab(view.webContents, win)
   wireTab(tab)
+  tab.host = win
   win.contentView.addChildView(view)
   view.setVisible(false)
 
@@ -550,8 +601,10 @@ function popoutTab(spaceId, tabId, at) {
   pw.tabId = tabId
   tab.popout = pw
   // Main window shows the neighbouring tab instead.
-  try { win.contentView.removeChildView(tab.view) } catch {}
+  try { (tab.host || win).contentView.removeChildView(tab.view) } catch {}
   pw.contentView.addChildView(tab.view)
+  tab.host = pw
+  releaseTab(tab, null)
   const fit = () => {
     if (pw.isDestroyed()) return
     const [w, h] = pw.getContentSize()
@@ -587,6 +640,7 @@ function returnTab(tab) {
   try { pw.contentView.removeChildView(tab.view) } catch {}
   if (quitting || !win || win.isDestroyed()) return
   win.contentView.addChildView(tab.view)
+  tab.host = win
   tab.view.setVisible(false)
   if (pw && !pw.isDestroyed()) setTimeout(() => !pw.isDestroyed() && pw.destroy(), 0)
   selectTab(tab.spaceId, tab.id)
@@ -629,11 +683,14 @@ function selectTab(spaceId, tabId) {
     if (!target.popout.isDestroyed()) { if (target.popout.isMinimized()) target.popout.restore(); target.popout.show(); target.popout.focus() }
     return
   }
-  const prev = rt.tabs.get(rt.activeTabId)
+  const c = cx()
+  const prev = rt.tabs.get(activeIdOf(rt, c))
   if (prev) prev.lastActive = Date.now()
-  rt.activeTabId = tabId
+  releaseTab(target, c)
+  setActiveId(rt, tabId, c)
   wakeTab(rt.tabs.get(tabId))
-  if (store.state.activeSpaceId !== spaceId) {
+  if (c) c.spaceId = spaceId
+  else if (store.state.activeSpaceId !== spaceId) {
     store.state.activeSpaceId = spaceId
     store.save()
   }
@@ -656,11 +713,14 @@ function closeTab(spaceId, tabId) {
     pw.removeAllListeners('close')
     try { pw.contentView.removeChildView(tab.view) } catch {}
     if (!pw.isDestroyed()) pw.destroy()
-  } else win.contentView.removeChildView(tab.view)
+  } else { try { (tab.host || win).contentView.removeChildView(tab.view) } catch {} }
   tab.view.webContents.close()
-  if (rt.activeTabId === tabId) {
-    rt.activeTabId = rt.order[Math.min(idx, rt.order.length - 1)] ?? null
-    if (rt.activeTabId && !rt.tabs.get(rt.activeTabId).internal) rt.extensions.selectTab(rt.tabs.get(rt.activeTabId).view.webContents)
+  for (const c of [null, ...extras]) {
+    if (activeIdOf(rt, c) !== tabId) continue
+    const taken = new Set([null, ...extras].map((k) => activeIdOf(rt, k)))
+    const cand = rt.order.map((id) => rt.tabs.get(id)).find((t) => t && !t.popout && !taken.has(t.id))
+    setActiveId(rt, cand ? cand.id : null, c)
+    if (c === null && cand && !cand.internal) rt.extensions.selectTab(cand.view.webContents)
   }
   layoutViews()
   persistTabs(spaceId)
@@ -672,19 +732,19 @@ function openApp(spaceId, appId) {
   const appEntry = space && space.apps.find((a) => a.id === appId)
   if (!appEntry) return
   const rt = getRuntime(spaceId)
-  if (store.state.activeSpaceId !== spaceId) activateSpace(spaceId)
+  if (spaceNow() !== spaceId) activateSpace(spaceId)
   const existing = [...rt.tabs.values()].find((t) => t.appId === appId)
   if (!existing) return createTab(spaceId, { url: appEntry.url, appId })
   // Clicking the app you're already on takes you back to its start page (like a Home button).
-  if (rt.activeTabId === existing.id && existing.url !== appEntry.url) {
+  if (activeIdOf(rt) === existing.id && existing.url !== appEntry.url) {
     existing.view.webContents.loadURL(appEntry.url).catch(() => {})
   }
   selectTab(spaceId, existing.id)
 }
 
 function activeTab() {
-  const rt = runtimes.get(store.state.activeSpaceId)
-  return rt ? rt.tabs.get(rt.activeTabId) : null
+  const rt = runtimes.get(spaceNow())
+  return rt ? rt.tabs.get(activeIdOf(rt)) : null
 }
 
 // ---------------------------------------------------------------- memory saver
@@ -720,7 +780,7 @@ setInterval(() => {
     const showing = rt.spaceId === store.state.activeSpaceId ? rt.activeTabId : null
     for (const t of rt.tabs.values()) {
       if (t.id === rt.activeTabId) t.lastActive = rt.spaceId === store.state.activeSpaceId ? now : t.lastActive
-      if (t.id === showing || t.popout) continue
+      if (t.id === showing || t.popout || shownInExtra(t)) continue
       if (now - (t.lastActive || now) > SLEEP_AFTER_MS) sleepTab(t)
     }
   }
@@ -840,7 +900,8 @@ async function sidePanelOp(spaceId, extId, op, arg) {
 
 function layoutViews() {
   if (!win) return
-  const active = activeTab()
+  const prm = runtimes.get(store.state.activeSpaceId)
+  const active = prm ? prm.tabs.get(prm.activeTabId) : null
   const panelShown = !!sidePanel && sidePanel.spaceId === store.state.activeSpaceId && !overlayOpen
   const panelW = Math.min(SIDE_PANEL_WIDTH, Math.round(contentBounds.width * 0.5))
   if (sidePanel) {
@@ -850,6 +911,19 @@ function layoutViews() {
   for (const rt of runtimes.values()) {
     for (const tab of rt.tabs.values()) {
       if (tab.popout) continue // lives in its own window
+      const owner = [...extras].find((x) => x.spaceId === tab.spaceId && x.active[tab.spaceId] === tab.id)
+      const host = owner ? owner.win : win
+      if (tab.host !== host && host && !host.isDestroyed()) {
+        try { tab.host && !tab.host.isDestroyed() && tab.host.contentView.removeChildView(tab.view) } catch {}
+        host.contentView.addChildView(tab.view)
+        tab.host = host
+      }
+      if (owner) {
+        const show = !owner.overlay
+        if (show) tab.view.setBounds(owner.bounds)
+        tab.view.setVisible(show)
+        continue
+      }
       const show = tab === active && !overlayOpen
       if (show) tab.view.setBounds(panelShown ? { ...contentBounds, width: Math.max(0, contentBounds.width - panelW) } : contentBounds)
       tab.view.setVisible(show)
@@ -859,10 +933,11 @@ function layoutViews() {
 
 // ---------------------------------------------------------------- UI state
 
-function snapshot() {
+function snapshot(c = null) {
   const s = store.state
   return {
-    activeSpaceId: s.activeSpaceId,
+    activeSpaceId: c ? c.spaceId : s.activeSpaceId,
+    extraWindow: !!c,
     settings: s.settings,
     catalog: CATALOG.filter((c) => c.url !== IMESSAGE_URL || process.platform === 'darwin' || process.env.MULTISPACE_TEST_CHATDB),
     colors: COLORS,
@@ -896,7 +971,7 @@ function snapshot() {
         partition: `persist:space-${space.id}`,
         apps: space.apps,
         tabs,
-        activeTabId: rt ? rt.activeTabId : null,
+        activeTabId: rt ? activeIdOf(rt, c) : null,
         unread,
         hasDot: tabs.some((t) => t.badge === -1),
       }
@@ -908,7 +983,8 @@ let pushTimer
 function pushState() {
   clearTimeout(pushTimer)
   pushTimer = setTimeout(() => {
-    if (win && !win.isDestroyed()) win.webContents.send('state', snapshot())
+    if (win && !win.isDestroyed()) win.webContents.send('state', snapshot(null))
+    for (const x of extras) if (!x.win.isDestroyed()) x.win.webContents.send('state', snapshot(x))
     pushPopouts()
     updateBadgeCount()
   }, 16)
@@ -1667,23 +1743,28 @@ function registerIpc() {
   })
   ipcMain.handle('pw:import', importPasswordsDialog)
 
-  ipcMain.handle('get-state', () => snapshot())
+  ipcMain.handle('get-state', (e) => snapshot(ctxOfWebContents(e.sender) || null))
   ipcMain.handle('ms-sidepanel', (e, extId, op, arg) => {
     const rt = [...runtimes.values()].find((r) => r.session === e.sender.session)
     if (!rt || !String(e.sender.getURL()).startsWith(`chrome-extension://${extId}/`)) throw new Error('Not allowed')
     return sidePanelOp(rt.spaceId, extId, op, arg)
   })
   ipcMain.on('content-bounds', (_e, b) => {
-    contentBounds = {
+    const nb = {
       x: Math.round(b.x),
       y: Math.round(b.y),
       width: Math.max(0, Math.round(b.width)),
       height: Math.max(0, Math.round(b.height)),
     }
+    const c = cx()
+    if (c) c.bounds = nb
+    else contentBounds = nb
     layoutViews()
   })
   ipcMain.on('overlay', (_e, open) => {
-    overlayOpen = !!open
+    const c = cx()
+    if (c) c.overlay = !!open
+    else overlayOpen = !!open
     layoutViews()
   })
 
@@ -1786,21 +1867,22 @@ function registerIpc() {
     pushState()
   })
 
-  ipcMain.on('tab:new', (_e, url) => createTab(store.state.activeSpaceId, { url: url || 'https://www.google.com/' }))
+  ipcMain.on('tab:new', (_e, url) => createTab(spaceNow(), { url: url || 'https://www.google.com/' }))
   ipcMain.on('tab:select', (_e, spaceId, tabId) => selectTab(spaceId, tabId))
   ipcMain.on('tab:close', (_e, spaceId, tabId) => closeTab(spaceId, tabId))
-  ipcMain.on('tab:popout', (e, spaceId, tabId, at) => { if (e.sender === win.webContents) popoutTab(spaceId, tabId, at) })
+  ipcMain.on('tab:popout', (e, spaceId, tabId, at) => { if (ctxOfWebContents(e.sender) !== undefined) popoutTab(spaceId, tabId, at) })
   ipcMain.on('app:menu', (e, spaceId, appId) => {
-    if (e.sender !== win.webContents) return
+    if (ctxOfWebContents(e.sender) === undefined) return
     const a = store.getSpace(spaceId)?.apps.find((x) => x.id === appId)
     if (!a) return
+    const from = BrowserWindow.fromWebContents(e.sender)
     Menu.buildFromTemplate([
-      { label: `Open ${a.name} in a New Window`, click: () => openInNewWindow(spaceId, a.url) },
-      { label: 'Edit app…', click: () => win.webContents.send('ui:edit-app', appId) },
-    ]).popup({ window: win })
+      { label: `Open ${a.name} in a New Window`, click: () => createExtraWindow(spaceId, a.id) },
+      { label: 'Edit app…', click: () => e.sender.send('ui:edit-app', appId) },
+    ]).popup({ window: from })
   })
   ipcMain.on('tab:menu', (e, spaceId, tabId) => {
-    if (e.sender !== win.webContents) return
+    if (ctxOfWebContents(e.sender) === undefined) return
     const tab = runtimes.get(spaceId)?.tabs.get(tabId)
     if (!tab) return
     Menu.buildFromTemplate([
@@ -1810,7 +1892,7 @@ function registerIpc() {
       { label: 'Reload', click: () => tab.view.webContents.reload() },
       { type: 'separator' },
       { label: 'Close Tab', click: () => closeTab(spaceId, tabId) },
-    ]).popup({ window: win })
+    ]).popup({ window: BrowserWindow.fromWebContents(e.sender) })
   })
   ipcMain.on('popout:cmd', (e, cmd) => {
     const tab = popoutFromEvent(e)
@@ -1831,7 +1913,7 @@ function registerIpc() {
     const tab = activeTab()
     const url = normalizeUrl(input)
     if (tab) tab.view.webContents.loadURL(url).catch(() => {})
-    else createTab(store.state.activeSpaceId, { url })
+    else createTab(spaceNow(), { url })
   })
   ipcMain.on('nav:back', () => activeTab()?.view.webContents.navigationHistory.goBack())
   ipcMain.on('nav:forward', () => activeTab()?.view.webContents.navigationHistory.goForward())
@@ -1846,7 +1928,7 @@ function registerIpc() {
   })
 
   ipcMain.handle('ext:list', () => {
-    const rt = runtimes.get(store.state.activeSpaceId)
+    const rt = runtimes.get(spaceNow())
     if (!rt) return []
     return exts(rt.session)
       .getAllExtensions()
@@ -2590,7 +2672,7 @@ function markInMessagesApp(guid) {
 }
 
 function buildAppMenu() {
-  const send = (channel, ...args) => () => win && win.webContents.send(channel, ...args)
+  const send = (channel, ...args) => () => { const c = cx(); const w = c ? c.win : win; w && !w.isDestroyed() && w.webContents.send(channel, ...args) }
   const isMac = process.platform === 'darwin'
   const template = [
     ...(isMac
@@ -2629,7 +2711,7 @@ function buildAppMenu() {
       label: 'File',
       submenu: [
         { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: send('ui:new-tab') },
-        { label: 'New Window', accelerator: 'CmdOrCtrl+N', click: () => openInNewWindow(store.state.activeSpaceId, 'https://www.google.com/') },
+        { label: 'New Window', accelerator: 'CmdOrCtrl+N', click: () => createExtraWindow() },
         { label: 'New Space…', accelerator: 'CmdOrCtrl+Shift+N', click: send('ui:new-space') },
         {
           label: 'Close Tab',
@@ -2770,6 +2852,53 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'ui', 'index.html'))
   win.on('closed', () => (win = null))
   win.webContents.once('did-finish-load', () => activateSpace(store.state.activeSpaceId))
+}
+
+// A second (third...) full browser window: sidebar, spaces, tabs. Pick a different space or app in it.
+function createExtraWindow(spaceId, openAppId) {
+  if (!win || win.isDestroyed()) return
+  const b = (BrowserWindow.getFocusedWindow() || win).getBounds()
+  const w = new BrowserWindow({
+    icon: path.join(__dirname, 'ui', 'icon.png'),
+    width: Math.min(b.width, 1400),
+    height: Math.min(b.height, 900),
+    x: b.x + 48,
+    y: b.y + 48,
+    minWidth: 800,
+    minHeight: 500,
+    title: DISPLAY_NAME,
+    backgroundColor: '#eceef2',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    trafficLightPosition: { x: 24, y: 18 },
+    webPreferences: { preload: path.join(__dirname, 'ui-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: false },
+  })
+  const c = { win: w, spaceId: (spaceId && store.getSpace(spaceId) && spaceId) || cx()?.spaceId || store.state.activeSpaceId, active: {}, bounds: { x: 0, y: 0, width: 0, height: 0 }, overlay: false }
+  extras.add(c)
+  w.loadFile(path.join(__dirname, 'ui', 'index.html'))
+  w.webContents.once('did-finish-load', () => {
+    forcedCtx = c
+    try {
+      activateSpace(c.spaceId)
+      if (openAppId) openApp(c.spaceId, openAppId)
+    } finally { forcedCtx = undefined }
+  })
+  w.on('close', () => {
+    // pages shown here go back to the main window (hidden there), nothing is lost
+    for (const rt of runtimes.values()) {
+      for (const tab of rt.tabs.values()) {
+        if (tab.host === w && win && !win.isDestroyed()) {
+          try { w.contentView.removeChildView(tab.view) } catch {}
+          win.contentView.addChildView(tab.view)
+          tab.view.setVisible(false)
+          tab.host = win
+        }
+      }
+    }
+    extras.delete(c)
+    layoutViews()
+    pushState()
+  })
+  return c
 }
 
 // ---------------------------------------------------------------- keeping logins (WhatsApp etc.)
