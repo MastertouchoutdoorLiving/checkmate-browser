@@ -574,6 +574,12 @@ function popoutTab(spaceId, tabId, at) {
   pushState()
 }
 
+// Open a second copy of a page (an app, Google...) in its own window, same logins.
+function openInNewWindow(spaceId, url) {
+  const tab = createTab(spaceId, { url: url || 'https://www.google.com/', select: false, persist: false })
+  if (tab) popoutTab(spaceId, tab.id)
+}
+
 function returnTab(tab) {
   const pw = tab.popout
   if (!pw) return
@@ -1784,6 +1790,15 @@ function registerIpc() {
   ipcMain.on('tab:select', (_e, spaceId, tabId) => selectTab(spaceId, tabId))
   ipcMain.on('tab:close', (_e, spaceId, tabId) => closeTab(spaceId, tabId))
   ipcMain.on('tab:popout', (e, spaceId, tabId, at) => { if (e.sender === win.webContents) popoutTab(spaceId, tabId, at) })
+  ipcMain.on('app:menu', (e, spaceId, appId) => {
+    if (e.sender !== win.webContents) return
+    const a = store.getSpace(spaceId)?.apps.find((x) => x.id === appId)
+    if (!a) return
+    Menu.buildFromTemplate([
+      { label: `Open ${a.name} in a New Window`, click: () => openInNewWindow(spaceId, a.url) },
+      { label: 'Edit app…', click: () => win.webContents.send('ui:edit-app', appId) },
+    ]).popup({ window: win })
+  })
   ipcMain.on('tab:menu', (e, spaceId, tabId) => {
     if (e.sender !== win.webContents) return
     const tab = runtimes.get(spaceId)?.tabs.get(tabId)
@@ -2614,6 +2629,7 @@ function buildAppMenu() {
       label: 'File',
       submenu: [
         { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: send('ui:new-tab') },
+        { label: 'New Window', accelerator: 'CmdOrCtrl+N', click: () => openInNewWindow(store.state.activeSpaceId, 'https://www.google.com/') },
         { label: 'New Space…', accelerator: 'CmdOrCtrl+Shift+N', click: send('ui:new-space') },
         {
           label: 'Close Tab',

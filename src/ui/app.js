@@ -284,9 +284,10 @@ $('#apps').addEventListener('contextmenu', (e) => {
   const li = e.target.closest('.app')
   if (li) {
     e.preventDefault()
-    appModal(activeSpace().apps.find((x) => x.id === li.dataset.id))
+    api.appMenu(activeSpace().id, li.dataset.id)
   }
 })
+api.onEditApp((appId) => appModal(activeSpace().apps.find((x) => x.id === appId)))
 $('#add-app').addEventListener('click', () => addAppModal())
 $('#pin-page').addEventListener('click', () => appModal(null, true))
 
