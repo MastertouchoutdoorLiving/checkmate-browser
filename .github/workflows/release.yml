@@ -91,7 +91,7 @@ jobs:
           test -d "stage/CheckMate Browser.app/Contents/Frameworks/$NAME Helper.app" || { echo "ERROR: helper app for '$NAME' not found"; ls "stage/CheckMate Browser.app/Contents/Frameworks"; exit 1; }
           # (Read the output into a variable first: "codesign | grep -q" can fail under pipefail and made us
           # replace the real Developer ID signature with an ad-hoc one, which reset Full Disk Access.)
-          SIGINFO=$(codesign -dv "stage/CheckMate Browser.app" 2>&1 || true)
+          SIGINFO=$(codesign -dvv "stage/CheckMate Browser.app" 2>&1 || true)
           echo "$SIGINFO" | grep -E "Authority|TeamIdentifier|Signature" || true
           if [[ "$SIGINFO" == *"Authority=Developer ID"* ]]; then
             codesign --verify --deep --strict --verbose=2 "stage/CheckMate Browser.app"
