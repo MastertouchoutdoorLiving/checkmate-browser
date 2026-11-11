@@ -167,7 +167,8 @@ async function listChats(limit = 150) {
     `SELECT c.ROWID AS id, c.guid AS guid, c.chat_identifier AS ident, c.display_name AS name, c.service_name AS service,
             m.date AS date, m.text AS text, hex(m.attributedBody) AS body, m.is_from_me AS fromMe, m.cache_has_attachments AS att,
             (SELECT COUNT(*) FROM chat_message_join j2 JOIN message m2 ON m2.ROWID = j2.message_id
-               WHERE j2.chat_id = c.ROWID AND m2.is_read = 0 AND m2.is_from_me = 0 AND m2.item_type = 0
+               WHERE j2.chat_id = c.ROWID AND m2.is_read = 0 AND COALESCE(m2.date_read, 0) = 0 AND m2.is_from_me = 0 AND m2.item_type = 0
+                 AND COALESCE(m2.associated_message_type, 0) = 0
                  AND m2.date > m.date - 2592000000000000) AS unread,
             (SELECT group_concat(h.id, ',') FROM chat_handle_join chj JOIN handle h ON h.ROWID = chj.handle_id WHERE chj.chat_id = c.ROWID) AS members
        FROM chat c
