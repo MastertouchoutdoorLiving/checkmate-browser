@@ -28,6 +28,7 @@ const contactParse = require('./imessage/contact-parse.js')
 const jobtread = require('./jobtread.js')
 const quo = require('./quo.js')
 const calendar = require('./calendar.js')
+const transcriber = require('./transcribe.js')
 const control = require('./control.js')
 let teamExportFn = null, teamImportFn = null
 const updater = require('./updater.js')
@@ -1561,12 +1562,18 @@ function registerIpc() {
   ipcMain.handle('unified:open', imsgOnly((it) => openUnified(it)))
   // Reply from the Unread page without opening the chat
   ipcMain.handle('imsg:mark-in-messages', imsgOnly((guid) => markInMessagesApp(guid)))
+  ipcMain.handle('unified:wait-done', imsgOnly((guid) => {
+    store.state.settings.imsgWaitDone = { ...(store.state.settings.imsgWaitDone || {}), [String(guid)]: Date.now() }
+    store.save()
+    return true
+  }))
   ipcMain.handle('unified:mark-read', imsgOnly((guid, date) => {
     markInMessagesApp(guid)
     const p = (store.state.settings.imsg = store.state.settings.imsg || { favorites: [], readUpTo: {}, manualUnread: {}, hidden: {} })
     p.readUpTo = p.readUpTo || {}
     p.readUpTo[String(guid)] = Math.max(Number(date) || 0, p.readUpTo[String(guid)] || 0)
     if (p.manualUnread) delete p.manualUnread[String(guid)]
+    store.state.settings.imsgWaitDone = { ...(store.state.settings.imsgWaitDone || {}), [String(guid)]: Math.max(Number(date) || 0, Date.now()) }
     store.save()
     for (const rt of runtimes.values()) for (const t of rt.tabs.values()) if (t.url === IMESSAGE_URL && !t.view.webContents.isDestroyed()) t.view.webContents.send('imsg:prefs-changed')
     return true
@@ -1648,6 +1655,9 @@ function registerIpc() {
     createTab(from.spaceId, { url })
     return true
   })
+  // Voice messages to text (on this Mac, with Apple's speech recognition).
+  ipcMain.handle('imsg:transcripts', imsgOnly(() => transcriber.readCache()))
+  ipcMain.handle('imsg:transcribe', imsgOnly(async (id) => transcriber.transcribe(String(Number(id) | 0), await imessage.attachmentPath(Number(id)))))
   // Show an attachment's file in Finder (for files the page can't display).
   ipcMain.on('imsg:reveal-attachment', async (e, id) => {
     if (!findTabByWebContents(e.sender)?.internal) return
@@ -2509,6 +2519,19 @@ async function unifiedList() {
           unreadChats.push(c)
         }
         jtAutoLink(unreadChats).catch(() => {})
+        // Customers who wrote to you, you read it, and you never answered (2 hours to 7 days ago).
+        const done = store.state.settings.imsgWaitDone || {}
+        const hrs = Number(store.state.settings.waitHours) || 2
+        const now = Date.now()
+        for (const c of await imessage.listChats(120)) {
+          if (c.lastFromMe || imsgIsUnread(c, p) || p.hidden?.[c.guid] >= c.date || done[c.guid] >= c.date) continue
+          const age = now - c.date
+          if (age < hrs * 36e5 || age > 7 * 864e5) continue
+          if (/^\d{3,6}$/.test(String(c.rawHandle || '').replace(/\D/g, '')) && !/[a-z@]/i.test(String(c.title || ''))) continue // short codes
+          if (/^(Loved|Liked|Disliked|Laughed at|Emphasized|Questioned)\s/.test(String(c.last || ''))) continue // just a reaction
+          const jl = jtLinks()[c.guid]
+          items.push({ kind: 'imsg', waiting: true, key: 'wait:' + c.guid, guid: c.guid, chatId: c.id, name: c.title || c.handle, preview: c.last, count: 0, date: c.date, job: jobLabel(jl), jobUrl: jl ? `https://app.jobtread.com/jobs/${jl.jobId}` : '' })
+        }
       } else imsgState = 'no-access'
     } catch {
       imsgState = 'error'
@@ -2533,7 +2556,7 @@ async function unifiedList() {
       if (t.badge) apps.push({ kind: 'app', key: `a:${t.id}`, spaceId: sp.id, tabId: t.id, name: app ? app.name : String(t.title || host).replace(/^\s*[*•]\s*/, '').replace(/\(\d+\+?\)\s*/, '').trim() || host, count: t.badge, space: sp.name, favicon: t.favicon || (app && app.icon) || null })
     }
   }
-  items.sort((a, b) => (b.date || 0) - (a.date || 0))
+  items.sort((a, b) => (!!a.waiting - !!b.waiting) || (b.date || 0) - (a.date || 0))
   return { items: items.concat(apps), imsgState, waOpen, multiSpace: store.state.spaces.length > 1 }
 }
 function openUnified(it) {
@@ -2633,6 +2656,127 @@ async function startImessageWatcher() {
   await checkNewImessages()
   setInterval(checkNewImessages, 5000)
 }
+
+// ---------------------------------------------------------------- morning summary
+// Once a day (first time the browser is open after the chosen time) it builds a short summary:
+// today's visits, unread chats, customers waiting for your answer, estimates to follow up, overdue
+// invoices and to-dos. It shows a Mac notification and, only if you typed your own number in
+// Tasks > Settings, texts it to you by iMessage.
+const morningCfg = () => ({ time: '07:30', phone: '', text: true, notify: true, ...(store.state.settings.morning || {}) })
+const money$ = (n) => '$' + Math.round(Number(n) || 0).toLocaleString('en-US')
+async function buildMorning() {
+  const lines = []
+  const now = new Date()
+  const wd = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'numeric' })
+  lines.push(`Bom dia, Nilson! Hoje, ${wd}.`)
+  const calUrl = secretGet('cal')
+  if (calUrl) {
+    try {
+      const evs = (await calendar.today(calUrl)).filter((x) => !/^busy$/i.test(x.title))
+      if (evs.length) {
+        lines.push('', `📅 Agenda (${evs.length}):`)
+        for (const ev of evs.slice(0, 8)) lines.push(`• ${ev.allDay ? 'Dia todo' : new Date(ev.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} ${ev.title}${ev.location ? ' · ' + ev.location.split(',')[0] : ''}`)
+      } else lines.push('', '📅 Nenhuma visita na agenda hoje.')
+    } catch {}
+  }
+  let counts = { unread: 0, waiting: 0, est: 0 }
+  try {
+    const u = await unifiedList()
+    const un = u.items.filter((i) => !i.waiting && i.kind !== 'app')
+    const wt = u.items.filter((i) => i.waiting)
+    counts.unread = un.length
+    counts.waiting = wt.length
+    if (un.length) lines.push('', `💬 Não lidas (${un.length}): ${un.slice(0, 5).map((i) => i.name).join(', ')}${un.length > 5 ? '…' : ''}`)
+    if (wt.length) lines.push('', `⏳ Esperando sua resposta (${wt.length}): ${wt.slice(0, 5).map((i) => i.name).join(', ')}${wt.length > 5 ? '…' : ''}`)
+  } catch {}
+  const key = jtKey()
+  if (key) {
+    try {
+      const m = await jobtread.moneyToChase(key)
+      const done = store.state.settings.followed || {}
+      const est = (m.estimates || []).filter((x) => !(done[x.id] > Date.now() - 7 * 864e5))
+      const inv = (m.invoices || []).filter((x) => !(done[x.id] > Date.now() - 7 * 864e5))
+      counts.est = est.length
+      if (est.length) lines.push('', `💲 Orçamentos para acompanhar (${est.length}): ${est.slice(0, 4).map((x) => x.customer || x.name).join(', ')}${est.length > 4 ? '…' : ''}`)
+      if (inv.length) lines.push('', `🧾 Faturas atrasadas (${inv.length}): ${money$(inv.reduce((a, x) => a + (Number(x.amount) || 0), 0))}`)
+    } catch {}
+  }
+  const end = new Date(); end.setHours(23, 59, 59, 999)
+  const due = todos().filter((t) => !t.done && t.due && t.due <= end.getTime())
+  if (due.length) lines.push('', `✅ Tarefas para hoje (${due.length}): ${due.slice(0, 5).map((t) => t.text).join('; ')}`)
+  return { text: lines.join('\n'), counts }
+}
+let morningBusy = false
+async function runMorning(force) {
+  if (morningBusy) return { ok: false }
+  morningBusy = true
+  try {
+    const cfg = morningCfg()
+    const { text, counts } = await buildMorning()
+    const sent = { notify: false, text: false }
+    if ((cfg.notify || force) && Notification.isSupported()) {
+      const bits = []
+      if (counts.waiting) bits.push(`${counts.waiting} esperando resposta`)
+      if (counts.unread) bits.push(`${counts.unread} não lidas`)
+      if (counts.est) bits.push(`${counts.est} orçamentos para acompanhar`)
+      const n = new Notification({ title: 'Bom dia! Resumo do dia', body: bits.join(' · ') || 'Abra o Today para ver o dia.', silent: false })
+      n.on('click', () => showToday())
+      n.show()
+      sent.notify = true
+    }
+    if (cfg.phone && (cfg.text || force)) {
+      const via = store.state.settings.sendVia || (process.platform === 'darwin' ? 'imessage' : 'quo')
+      const d = cfg.phone.replace(/\D/g, '')
+      const to = cfg.phone.startsWith('+') ? '+' + d : d.length === 10 ? '+1' + d : '+' + d
+      if (via === 'quo') {
+        const key = secretGet('quo')
+        if (!key) throw new Error('Quo is not connected yet.')
+        await quo.send(key, { from: (store.state.settings.quoCfg || {}).from, to, content: text })
+      } else {
+        if (process.platform !== 'darwin') throw new Error('iMessage only works on a Mac. Pick Quo.')
+        await imessage.sendToHandle(to, text)
+      }
+      sent.text = true
+    }
+    return { ok: true, sent, text }
+  } finally {
+    morningBusy = false
+  }
+}
+async function morningTick() {
+  const cfg = morningCfg()
+  if (!cfg.notify && !(cfg.phone && cfg.text)) return
+  const now = new Date()
+  const today = now.toDateString()
+  if (store.state.settings.morningLast === today) return
+  const [h, m] = String(cfg.time).split(':').map(Number)
+  if (now.getHours() * 60 + now.getMinutes() < (h || 0) * 60 + (m || 0)) return
+  if (now.getHours() >= 12) { store.state.settings.morningLast = today; store.save(); return } // opened too late: skip today
+  store.state.settings.morningLast = today
+  store.save()
+  try { await runMorning(false) } catch (err) { console.error('morning summary:', err.message) }
+}
+setInterval(() => morningTick().catch(() => {}), 60 * 1000)
+setTimeout(() => morningTick().catch(() => {}), 20000)
+ipcMain.handle('morning:get', (e) => (isInternalSender(e) ? morningCfg() : null))
+ipcMain.handle('morning:set', (e, p) => {
+  if (!isInternalSender(e) || !p) throw new Error('Not allowed')
+  const cur = morningCfg()
+  const next = { ...cur }
+  if (typeof p.phone === 'string') next.phone = p.phone.replace(/[^\d+]/g, '').slice(0, 20)
+  if (typeof p.time === 'string' && /^\d{1,2}:\d{2}$/.test(p.time)) next.time = p.time
+  if (typeof p.text === 'boolean') next.text = p.text
+  if (typeof p.notify === 'boolean') next.notify = p.notify
+  store.state.settings.morning = next
+  store.save()
+  return next
+})
+// "Send me the summary now": only when you press the button in Settings.
+ipcMain.handle('morning:test', async (e) => {
+  if (!isInternalSender(e)) throw new Error('Not allowed')
+  const r = await runMorning(true)
+  return { ...(r.sent || {}), preview: r.text || '' }
+})
 
 function claudeControlCtx() {
   return {
@@ -2962,6 +3106,7 @@ app.whenReady().then(() => {
   registerIpc()
   // Photos from your Messages, served only to the built-in iMessage page as imsg-att://file/<id>
   imessage.setCacheDir(path.join(app.getPath('userData'), 'imessage-cache'))
+  transcriber.setDir(app.getPath('userData'))
   session.fromPartition('internal-pages').protocol.handle('imsg-att', async (req) => {
     try {
       const id = Number(new URL(req.url).pathname.replace(/\D/g, ''))

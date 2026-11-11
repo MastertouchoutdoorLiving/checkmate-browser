@@ -9,7 +9,11 @@ const SRC = {
   imsg: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#fff" d="M12 4C6.9 4 3 7.3 3 11.3c0 2.3 1.3 4.4 3.4 5.7-.2 1.3-.8 2.4-1.8 3.2 1.8.1 3.5-.5 4.8-1.6.8.2 1.7.3 2.6.3 5.1 0 9-3.3 9-7.6S17.1 4 12 4z"/></svg>',
   wa: '<svg viewBox="0 0 24 24" width="20" height="20"><path fill="#fff" d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.6-1.2A9 9 0 1 0 12 3zm4.6 12.4c-.2.6-1.1 1.1-1.6 1.2-.4.1-1 .1-1.6-.1-.4-.1-.8-.3-1.4-.5-2.5-1.1-4.1-3.6-4.2-3.8-.1-.2-1-1.3-1-2.5s.6-1.8.9-2c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.7 1.2 1.5 1.9 1 .9 1.9 1.2 2.1 1.3.3.1.4.1.6-.1l.8-1c.2-.3.4-.2.6-.1l1.8.9c.3.1.4.2.5.3.1.2.1.6-.1 1.2z"/></svg>',
 }
-const LABEL = { imsg: 'iMessage', wa: 'WhatsApp', app: 'Other apps' }
+const LABEL = { imsg: 'iMessage', wa: 'WhatsApp', app: 'Other apps', wait: 'Waiting for you' }
+function ago(ms) {
+  const h = Math.floor((Date.now() - ms) / 36e5)
+  return h < 24 ? `${Math.max(1, h)}h ago` : `${Math.floor(h / 24)}d ago`
+}
 
 function when(it) {
   if (it.time) return it.time
@@ -36,9 +40,9 @@ function row(it) {
   return `<div class="item ${it.key === openKey ? 'open' : ''}" role="button" tabindex="0" data-k="${esc(it.key)}">
     <span class="src ${it.kind}">${icon}</span>
     <span class="body">
-      <span class="top"><span class="name">${esc(it.name)}</span><span class="where">${where}${space}</span>${it.job ? `<span class="job" title="JobTread job">🔨 ${esc(it.job)}</span>` : ''}<span class="time">${esc(when(it))}</span></span>
+      <span class="top"><span class="name">${esc(it.name)}</span><span class="where">${where}${space}</span>${it.job ? `<span class="job" title="JobTread job">🔨 ${esc(it.job)}</span>` : ''}<span class="time">${esc(it.waiting ? ago(it.date) : when(it))}</span></span>
       <span class="preview">${preview}</span>
-    </span>${count}${canReply ? `<span class="acts"><span class="act reply" title="Reply here">↩︎ Reply</span><span class="act go" title="Open the chat">↗</span></span>` : ''}</div>`
+    </span>${count}${canReply ? `<span class="acts">${it.waiting ? '<span class="act done" title="Nothing to answer">✓ Done</span>' : ''}<span class="act reply" title="Reply here">↩︎ Reply</span><span class="act go" title="Open the chat">↗</span></span>` : ''}</div>`
 }
 
 let lastSig = ''
@@ -48,13 +52,14 @@ function render(force) {
   lastSig = sig
   const items = data.items || []
   byKey = new Map(items.map((i) => [i.key, i]))
-  const n = (k) => items.filter((i) => k === 'all' || i.kind === k).length
+  const inF = (i, k) => (k === 'wait' ? !!i.waiting : !i.waiting && (k === 'all' || i.kind === k))
+  const n = (k) => items.filter((i) => inF(i, k)).length
   document.querySelectorAll('#filters button').forEach((b) => {
     b.classList.toggle('on', b.dataset.f === filter)
     const c = n(b.dataset.f)
     b.innerHTML = `${b.dataset.f === 'all' ? 'All' : LABEL[b.dataset.f]}${c ? `<span class="n">${c}</span>` : ''}`
   })
-  const total = items.length
+  const total = items.filter((i) => !i.waiting).length
   $('#total').textContent = total || ''
   document.title = total ? `Unread (${total})` : 'Unread'
 
@@ -63,18 +68,18 @@ function render(force) {
   if (!data.waOpen && (filter === 'all' || filter === 'wa')) notes.push('WhatsApp shows up here while it is open in the browser. Open WhatsApp once and leave it signed in.')
   $('#notes').innerHTML = notes.map((t) => `<div class="note">${esc(t)}</div>`).join('')
 
-  const shown = items.filter((i) => filter === 'all' || i.kind === filter)
+  const shown = items.filter((i) => inF(i, filter) || (filter === 'all' && i.waiting))
   if (!shown.length) {
     document.body.appendChild($('#reply'))
-    $('#list').innerHTML = '<div class="empty"><b>🎉</b>Nothing unread. You\'re all caught up.</div>'
+    $('#list').innerHTML = `<div class="empty"><b>🎉</b>${filter === 'wait' ? 'Everyone you read has an answer.' : 'Nothing unread. You\'re all caught up.'}</div>`
     placePanel()
     return
   }
   let html = ''
-  for (const k of ['imsg', 'wa', 'app']) {
-    const group = shown.filter((i) => i.kind === k)
+  for (const k of ['imsg', 'wa', 'app', 'wait']) {
+    const group = k === 'wait' ? shown.filter((i) => i.waiting) : shown.filter((i) => i.kind === k && !i.waiting)
     if (!group.length) continue
-    if (filter === 'all') html += `<div class="sec">${LABEL[k]}</div>`
+    if (filter === 'all' || k === 'wait') html += `<div class="sec">${LABEL[k]}${k === 'wait' ? ' · you read it, no answer yet' : ''}</div>`
     html += group.map(row).join('')
   }
   const panel = $('#reply')
@@ -110,6 +115,7 @@ $('#list').addEventListener('click', (e) => {
   const b = e.target.closest('.item')
   const it = b && byKey.get(b.dataset.k)
   if (!it) return
+  if (e.target.closest('.act.done')) { window.imsg.waitDone(it.guid).then(refresh); return }
   if (it.kind === 'app' || e.target.closest('.act.go')) return openIt(it)
   if (openKey === it.key) closeReply()
   else openReply(it)
@@ -164,13 +170,38 @@ async function openReply(it) {
   $('#r-text').focus()
   if (it.kind === 'imsg') loadHistory(it)
 }
+const vmFailed = {}
+document.addEventListener('click', async (e) => {
+  const a = e.target.closest('[data-vm]')
+  if (!a) return
+  e.preventDefault()
+  const id = a.dataset.vm
+  a.textContent = 'reading…'
+  try {
+    await window.imsg.transcribe(id)
+    if (openItem) loadHistory(openItem)
+  } catch (err) {
+    vmFailed[id] = true
+    a.textContent = String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '').slice(0, 140)
+  }
+})
 let hist = []
 async function loadHistory(it) {
   try {
     const msgs = await window.imsg.messages(it.chatId)
     if (openKey !== it.key) return
     hist = msgs.filter((m) => m.text || (m.attachments || []).length).slice(-8)
-    $('#r-hist').innerHTML = hist.map((m) => `<div class="h ${m.fromMe ? 'me' : 'them'}">${!m.fromMe && m.sender && it.name && it.name.includes(',') ? `<b>${esc(m.sender)}</b>` : ''}<span>${m.text ? esc(m.text) : '📎 Attachment'}</span></div>`).join('') || '<div class="h-empty">No messages.</div>'
+    const tr = await window.imsg.transcripts().catch(() => ({}))
+    const body = (m) => {
+      if (m.text) return esc(m.text)
+      const au = (m.attachments || []).find((x) => /^audio\//.test(x.mime))
+      if (au) return tr[au.id] ? '🎤 ' + esc(tr[au.id]) : `🎤 Voice message <a href="#" data-vm="${Number(au.id)}">transcribe</a>`
+      return '📎 Attachment'
+    }
+    $('#r-hist').innerHTML = hist.map((m) => `<div class="h ${m.fromMe ? 'me' : 'them'}">${!m.fromMe && m.sender && it.name && it.name.includes(',') ? `<b>${esc(m.sender)}</b>` : ''}<span>${body(m)}</span></div>`).join('') || '<div class="h-empty">No messages.</div>'
+    const vms = [...document.querySelectorAll('#r-hist [data-vm]')]
+    const lastV = vms[vms.length - 1]
+    if (lastV && !vmFailed[lastV.dataset.vm]) lastV.click()
     $('#r-hist').scrollTop = 1e6
   } catch {
     if (openKey === it.key) $('#r-hist').innerHTML = `<div class="h them"><span>${esc(it.preview || '')}</span></div>`

@@ -46,7 +46,7 @@ h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -.3px; displa
 .acts { flex: 0 0 auto; display: flex; gap: 4px; }
 .act { font-size: 12px; color: var(--muted); border: 1px solid var(--line2); border-radius: 8px; padding: 3px 8px; background: var(--card); white-space: nowrap; }
 .act:hover { color: var(--text); border-color: var(--muted); }
-.item:not(:hover):not(.open) .act.reply { display: none; }
+.item:not(:hover):not(.open) .act.reply, .item:not(:hover):not(.open) .act.done { display: none; }
 #reply { border: 1px solid var(--accent); border-top: none; border-radius: 0 0 14px 14px; background: var(--card); padding: 10px 14px 12px; margin-bottom: 8px; }
 #r-hist { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 4px 0 10px; }
 .h { display: flex; flex-direction: column; max-width: 78%; }
@@ -73,6 +73,7 @@ h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -.3px; displa
 .item, #reply { max-width: 100%; min-width: 0; }
 .body, .top, .preview { min-width: 0; overflow: hidden; }
 .preview { display: block; text-overflow: ellipsis; }
+.item .act.done { display: inline-block; }
 .item:not(:hover):not(.open) .act.reply { display: inline-block; }
 
 /* ---- big screens */

@@ -577,3 +577,36 @@ window.imsg.onOpenItem(async (what, id) => {
     if (ev) openOmw(ev)
   }
 })
+
+
+// ---- Morning summary settings
+async function loadMorning() {
+  try {
+    const c = await window.imsg.morningGet()
+    if (!c) return
+    $('#mo-time').value = c.time || '07:30'
+    if (document.activeElement !== $('#mo-phone')) $('#mo-phone').value = c.phone || ''
+    $('#mo-notify').checked = c.notify !== false
+    $('#mo-text').checked = c.text !== false
+    $('#mo-state').textContent = c.phone && c.text ? 'Notification + text' : c.notify ? 'Notification' : 'Off'
+  } catch {}
+}
+$('#mo-save').addEventListener('click', async () => {
+  const msg = $('#mo-msg')
+  try {
+    await window.imsg.morningSet({ time: $('#mo-time').value, phone: $('#mo-phone').value, notify: $('#mo-notify').checked, text: $('#mo-text').checked })
+    msg.className = 'msg'; msg.textContent = 'Saved ✓'
+    loadMorning()
+  } catch (err) { msg.className = 'msg err'; msg.textContent = errText(err) }
+})
+$('#mo-test').addEventListener('click', async () => {
+  const msg = $('#mo-msg')
+  msg.className = 'msg'; msg.textContent = 'Sending…'
+  try {
+    await window.imsg.morningSet({ time: $('#mo-time').value, phone: $('#mo-phone').value, notify: $('#mo-notify').checked, text: $('#mo-text').checked })
+    const r = await window.imsg.morningTest()
+    msg.className = 'msg'
+    msg.textContent = r.text ? 'Sent to your phone ✓' : r.notify ? 'Notification shown. Add your phone number to get the text too.' : 'Nothing was sent.'
+  } catch (err) { msg.className = 'msg err'; msg.textContent = errText(err) }
+})
+loadMorning()

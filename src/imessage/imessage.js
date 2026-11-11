@@ -411,14 +411,45 @@ async function loadMessages(chat, scroll = true) {
   box.innerHTML = html || '<div class="empty">No messages yet</div>'
   if (scroll || atBottom) box.scrollTop = box.scrollHeight
   renderChats()
+  // the newest voice messages from them are read automatically (one at a time)
+  const voice = msgs.filter((m) => !m.fromMe).flatMap((m) => (m.attachments || []).filter((x) => /^audio\//.test(x.mime))).slice(-2)
+  ;(async () => { for (const x of voice) if (!transcripts[x.id] && !trFailed[x.id]) await transcribeAtt(x.id) })()
 }
 
+// ---- voice messages as text
+const transcripts = {} // attachment id -> text
+const trFailed = {} // attachment id -> error text
+const trBusy = new Set()
+const trHtml = (id) => transcripts[id]
+  ? `<span class="tr-text">📝 ${esc(transcripts[id])}</span>`
+  : trBusy.has(id) ? '<span class="tr-note">📝 Reading the voice message…</span>'
+  : `<button type="button" class="tr-btn" data-tr-go="${Number(id)}">📝 Transcribe</button>${trFailed[id] ? `<span class="tr-note err">${esc(trFailed[id])}</span>` : ''}`
+async function transcribeAtt(id) {
+  id = Number(id)
+  if (trBusy.has(id) || transcripts[id]) return
+  trBusy.add(id)
+  delete trFailed[id]
+  document.querySelectorAll(`[data-tr="${id}"]`).forEach((n) => (n.innerHTML = trHtml(id)))
+  try {
+    transcripts[id] = await window.imsg.transcribe(id)
+  } catch (err) {
+    trFailed[id] = String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+  } finally {
+    trBusy.delete(id)
+    document.querySelectorAll(`[data-tr="${id}"]`).forEach((n) => (n.innerHTML = trHtml(id)))
+  }
+}
+window.imsg.transcripts().then((c) => Object.assign(transcripts, c || {})).catch(() => {})
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tr-go]')
+  if (b) transcribeAtt(b.dataset.trGo)
+})
 // photos and videos show inline; other files show as a chip you can open in Finder
 function attachmentHtml(a) {
   const src = `imsg-att://file/${Number(a.id)}`
   if (/^image\//.test(a.mime)) return `<img class="att-img" src="${src}" data-att="${Number(a.id)}" alt="${esc(a.name)}" loading="lazy" draggable="true" />`
   if (/^video\//.test(a.mime)) return `<video class="att-video" src="${src}" data-att="${Number(a.id)}" data-kind="video" draggable="true" controls preload="metadata"></video>`
-  if (/^audio\//.test(a.mime)) return `<audio class="att-audio" src="${src}" controls preload="none"></audio>`
+  if (/^audio\//.test(a.mime)) return `<audio class="att-audio" src="${src}" controls preload="none"></audio><div class="att-tr" data-tr="${Number(a.id)}">${trHtml(a.id)}</div>`
   const kb = a.size ? (a.size > 1e6 ? (a.size / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(a.size / 1e3)) + ' KB') : ''
   return `<button class="att-file" data-reveal="${Number(a.id)}" data-att="${Number(a.id)}" data-kind="file" data-name="${esc(a.name || 'File')}" draggable="true" title="Click: show in Finder · Drag onto ✓ JobTread at the top to file it on the job">📎 <span>${esc(a.name || 'File')}</span>${kb ? ` <small>${kb}</small>` : ''}</button>`
 }

@@ -101,6 +101,16 @@
           <div class="msg" id="ai-msg"></div>
         </div>
         <div class="card conn">
+          <div class="conn-top"><b>Morning summary</b><span id="mo-state" class="pill"></span></div>
+          <p class="tip">Every morning, when the browser is open, you get a notification with your visits, unread chats, customers waiting for your answer and estimates to follow up. Add your own phone number to also get it as a text (sent the way you chose above: iMessage or Quo).</p>
+          <label class="field">Time<input id="mo-time" type="time" value="07:30" /></label>
+          <label class="field">My phone number<input id="mo-phone" placeholder="+1 954 555 1234" autocomplete="off" /></label>
+          <label class="radio"><input type="checkbox" id="mo-notify" checked> Show a notification</label>
+          <label class="radio"><input type="checkbox" id="mo-text" checked> Text me the summary</label>
+          <div class="row"><button type="button" class="btn primary" id="mo-save">Save</button><button type="button" class="btn" id="mo-test">Send me one now</button></div>
+          <div class="msg" id="mo-msg"></div>
+        </div>
+        <div class="card conn">
           <div class="conn-top"><b>Team setup</b></div>
           <p class="tip">Save your apps, quick replies and message templates in a file. Your employee opens Import and picks the file. Keys and passwords are never in the file.</p>
           <div class="row"><button type="button" class="btn" id="team-export">Export…</button><button type="button" class="btn" id="team-import">Import…</button></div>

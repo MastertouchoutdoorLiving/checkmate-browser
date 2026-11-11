@@ -381,3 +381,11 @@ html, body { overflow: hidden; }
   #chat-job, #jtp-hint { background: #22324f; border-color: #35507f; color: #9dbcf5; }
   input, textarea, select { color-scheme: dark; }
 }
+
+/* voice message transcripts */
+.att-tr { margin-top: 4px; font-size: 13px; line-height: 1.4; max-width: 360px; }
+.tr-btn { font: inherit; font-size: 12px; border: 1px solid var(--line2, #ddd); background: var(--card, #fff); color: var(--muted, #777); border-radius: 8px; padding: 3px 8px; cursor: pointer; }
+.tr-btn:hover { color: var(--text, #222); }
+.tr-text { display: block; background: rgba(120, 120, 120, 0.12); border-radius: 10px; padding: 6px 10px; }
+.tr-note { font-size: 12px; color: var(--muted, #777); margin-left: 6px; }
+.tr-note.err { color: #c0392b; }
