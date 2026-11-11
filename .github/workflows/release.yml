@@ -75,6 +75,8 @@ jobs:
 
       - name: Package zip and dmg
         if: steps.chk.outputs.skip != '1'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -e
           BUILT=$(ls -d dist/mac*/*.app | head -1)
@@ -87,10 +89,15 @@ jobs:
           test "$NAME" = "CheckMate Browser" || { echo "ERROR: CFBundleName is '$NAME'"; exit 1; }
           # Electron looks for "<CFBundleName> Helper.app"; if the names differ the app crashes at launch.
           test -d "stage/CheckMate Browser.app/Contents/Frameworks/$NAME Helper.app" || { echo "ERROR: helper app for '$NAME' not found"; ls "stage/CheckMate Browser.app/Contents/Frameworks"; exit 1; }
-          if codesign -dv "stage/CheckMate Browser.app" 2>&1 | grep -q "Authority=Developer ID"; then
+          # (Read the output into a variable first: "codesign | grep -q" can fail under pipefail and made us
+          # replace the real Developer ID signature with an ad-hoc one, which reset Full Disk Access.)
+          SIGINFO=$(codesign -dv "stage/CheckMate Browser.app" 2>&1 || true)
+          echo "$SIGINFO" | grep -E "Authority|TeamIdentifier|Signature" || true
+          if [[ "$SIGINFO" == *"Authority=Developer ID"* ]]; then
             codesign --verify --deep --strict --verbose=2 "stage/CheckMate Browser.app"
             spctl -a -vv -t exec "stage/CheckMate Browser.app" || true
           else
+            if [ -n "$APPLE_TEAM_ID" ]; then echo "ERROR: Developer ID secrets exist but the app is not Developer ID signed"; exit 1; fi
             codesign --force --deep --sign - "stage/CheckMate Browser.app"
           fi
           # Smoke test: really start the packaged app. A launch crash (like "Unable to find helper app") gives a non-zero exit and stops the release.
